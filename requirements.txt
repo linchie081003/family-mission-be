@@ -12,3 +12,5 @@ pydantic-settings==2.7.0
 python-dotenv==1.0.1
 aiofiles==24.1.0
 apscheduler==3.10.4
+redis==5.2.1
+sentry-sdk[fastapi]==2.19.2

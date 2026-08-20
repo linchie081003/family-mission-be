@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.constants import TOKEN_INVALID
 from app.core.database import get_db
-from app.models.models import Child, Family, PlatformAdmin
+from app.models.models import Child, Family, Parent, PlatformAdmin
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
@@ -56,25 +56,46 @@ def decode_access_token(token: str) -> dict:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=TOKEN_INVALID) from exc
 
 
+async def get_current_parent(
+    credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Parent:
+    payload = decode_access_token(credentials.credentials)
+    parent_id = payload.get("parent_id")
+    family_id = payload.get("family_id")
+    role = payload.get("role")
+    if parent_id is None or family_id is None or role != "parent":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=TOKEN_INVALID)
+
+    result = await db.execute(
+        select(Parent).where(Parent.id == parent_id, Parent.family_id == family_id, Parent.is_active == True)
+    )
+    parent = result.scalar_one_or_none()
+    if not parent:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=TOKEN_INVALID)
+
+    family = await db.get(Family, family_id)
+    if not family or not family.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Akun keluarga dinonaktifkan. Hubungi support jika perlu bantuan.",
+        )
+    if not parent.email_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email belum diverifikasi. Cek inbox atau minta kirim ulang verifikasi.",
+        )
+    return parent
+
+
 async def get_current_family(
     credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Family:
-    payload = decode_access_token(credentials.credentials)
-    family_id = payload.get("family_id")
-    role = payload.get("role")
-    if family_id is None or role != "parent":
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=TOKEN_INVALID)
-
-    result = await db.execute(select(Family).where(Family.id == family_id))
-    family = result.scalar_one_or_none()
+    parent = await get_current_parent(credentials, db)
+    family = await db.get(Family, parent.family_id)
     if not family:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=TOKEN_INVALID)
-    if not family.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Akun belum disetujui Super Admin atau dinonaktifkan",
-        )
     return family
 
 

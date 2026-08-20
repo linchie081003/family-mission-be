@@ -11,30 +11,38 @@ async def test_health(client: AsyncClient):
     assert data["architecture"] == "mvc"
 
 
+TEST_REGISTER = {
+    "email": "integration@example.com",
+    "password": "Secret123!",
+    "confirm_password": "Secret123!",
+    "family_name": "Integration Test",
+    "name": "Test Parent",
+    "role": "father",
+    "accept_terms": True,
+    "accept_privacy": True,
+    "accept_parental_consent": True,
+    "accept_child_data_protection": True,
+}
+
+
 @pytest.mark.asyncio
 async def test_parent_register_and_login(client: AsyncClient):
-    register = await client.post(
-        "/api/auth/register",
-        json={
-            "email": "integration@example.com",
-            "password": "secret123",
-            "family_name": "Integration Test",
-        },
-    )
+    register = await client.post("/api/auth/register", json=TEST_REGISTER)
     assert register.status_code == 200
     reg_data = register.json()
-    assert reg_data["status"] == "pending"
+    assert reg_data["status"] == "pending_verification"
     assert reg_data["family_id"]
 
     login = await client.post(
         "/api/auth/login",
-        json={"email": "integration@example.com", "password": "secret123"},
+        json={"email": TEST_REGISTER["email"], "password": TEST_REGISTER["password"]},
     )
-    assert login.status_code == 403
+    assert login.status_code == 200
+    assert login.json()["role"] == "parent"
 
     bad_login = await client.post(
         "/api/auth/login",
-        json={"email": "integration@example.com", "password": "wrong-password"},
+        json={"email": TEST_REGISTER["email"], "password": "WrongPass1!"},
     )
     assert bad_login.status_code == 401
 

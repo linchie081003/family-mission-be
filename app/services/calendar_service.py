@@ -20,6 +20,9 @@ def parse_month(month: str) -> tuple[date, date]:
     return date(year, mon, 1), date(year, mon, last_day)
 
 
+from app.services.calendar_debug import calendar_debug_log
+
+
 async def build_calendar(
     db: AsyncSession,
     family_id: int,
@@ -69,7 +72,7 @@ async def build_calendar(
     def ensure_day(d: date) -> dict:
         key = d.isoformat()
         if key not in days:
-            days[key] = {"missions": [], "agenda": [], "net_points": 0}
+            days[key] = {"missions": [], "agenda": [], "net_points": 0, "point_entries": []}
         return days[key]
 
     for c in completions:
@@ -86,6 +89,12 @@ async def build_calendar(
         d = tx.created_at.date()
         day = ensure_day(d)
         day["net_points"] += tx.points
+        day["point_entries"].append({
+            "id": tx.id,
+            "type": tx.transaction_type.value,
+            "title": tx.description,
+            "points": tx.points,
+        })
 
     for item in agenda_items:
         day = ensure_day(item.event_date)
@@ -98,6 +107,24 @@ async def build_calendar(
             "color": item.color,
             "child_id": item.child_id,
         })
+
+    for date_key, day in days.items():
+        if day["net_points"] != 0:
+            mission_approved = sum(
+                m["points"] for m in day["missions"] if m["status"] == "approved"
+            )
+            other = [e for e in day["point_entries"] if e["type"] != "mission"]
+            calendar_debug_log(
+                location="calendar_service.py:build_calendar",
+                message="day point breakdown",
+                data={
+                    "date": date_key,
+                    "net_points": day["net_points"],
+                    "mission_approved_sum": mission_approved,
+                    "other_entry_count": len(other),
+                    "other_entries": other,
+                },
+            )
 
     return {"month": month, "child_id": child_id, "days": days}
 
@@ -154,6 +181,7 @@ async def build_family_overview(
                 "missions": day_data["missions"],
                 "agenda": personal_agenda,
                 "net_points": day_data["net_points"],
+                "point_entries": day_data.get("point_entries", []),
             }
         for date_key, payload in child_days.items():
             day = ensure_day(date.fromisoformat(date_key))

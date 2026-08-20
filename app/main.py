@@ -20,7 +20,22 @@ from app.core.config import settings
 
 from app.core.database import Base, async_session, engine
 
+from app.controllers import auth_controller, legal_controller, parent_controller, referral_controller
+from app.middleware.exception_handlers import unhandled_exception_handler
+from app.middleware.request_id import GlobalRateLimitMiddleware, RequestIdMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
+
+if settings.sentry_dsn:
+    import sentry_sdk
+    from sentry_sdk.integrations.fastapi import FastApiIntegration
+    from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+
+    sentry_sdk.init(
+        dsn=settings.sentry_dsn,
+        environment=settings.environment,
+        integrations=[FastApiIntegration(), SqlalchemyIntegration()],
+        traces_sample_rate=0.1,
+    )
 
 from app.repositories.platform_repository import PlatformRepository
 
@@ -115,19 +130,15 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-
     title="Family Mission API",
-
     version="2.0.0",
-
     description="MVC architecture: controllers → services → repositories → models",
-
     lifespan=lifespan,
-
 )
 
-
-
+app.add_exception_handler(Exception, unhandled_exception_handler)
+app.add_middleware(GlobalRateLimitMiddleware)
+app.add_middleware(RequestIdMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 
 app.add_middleware(
@@ -140,13 +151,16 @@ app.add_middleware(
 
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
 
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
 
 )
 
 
 
 app.include_router(auth.router, prefix="/api")
+app.include_router(parent_controller.router, prefix="/api")
+app.include_router(referral_controller.router, prefix="/api")
+app.include_router(legal_controller.router, prefix="/api")
 
 app.include_router(child_auth.router, prefix="/api")
 

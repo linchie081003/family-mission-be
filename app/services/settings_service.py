@@ -2,7 +2,7 @@ from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import hash_password, verify_password
-from app.models.models import Family
+from app.models.models import Family, Parent
 from app.repositories.settings_repository import AuditRepository, SettingsRepository
 from app.schemas import FamilyPublic, ParentPasswordChange, SettingsUpdate
 from app.services.audit_service import log_audit
@@ -80,17 +80,18 @@ class SettingsService:
 
         return family
 
-    async def change_password(self, family: Family, data: ParentPasswordChange) -> dict:
-        if not verify_password(data.current_password, family.password_hash):
+    async def change_password(self, parent: Parent, data: ParentPasswordChange) -> dict:
+        if not verify_password(data.current_password, parent.password_hash):
             raise HTTPException(status_code=400, detail="Password saat ini salah")
         if data.current_password == data.new_password:
             raise HTTPException(status_code=400, detail="Password baru harus berbeda")
 
-        family.password_hash = hash_password(data.new_password)
+        parent.password_hash = hash_password(data.new_password)
+        family = await self.db.get(Family, parent.family_id)
         await log_audit(
-            self.db, family.id, "parent", family.family_name, "update", "parent_password",
-            "Password admin orang tua diubah",
-            details={"changed_at": "now"},
+            self.db, parent.family_id, "parent", parent.name, "update", "parent_password",
+            "Password orang tua diubah",
+            details={"changed_at": "now", "parent_id": parent.id},
         )
         return {"message": "Password berhasil diubah"}
 

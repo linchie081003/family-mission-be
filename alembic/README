@@ -1,0 +1,5 @@
+"""Alembic migrations for Family Mission.
+
+Run: cd backend && alembic upgrade head
+Startup also applies run_light_migrations() for idempotent schema updates.
+"""

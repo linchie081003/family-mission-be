@@ -1,16 +1,46 @@
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
+from app.core.password_policy import validate_password_strength
+from app.models.models import ParentRole
 from app.services.proof_image import normalize_image_data_url
+
+
+def _validate_password_field(v: str) -> str:
+    validate_password_strength(v)
+    return v
 
 
 # Auth
 class FamilyRegister(BaseModel):
     email: EmailStr
-    password: str = Field(min_length=6)
+    password: str = Field(min_length=8)
+    confirm_password: str = Field(min_length=8)
     family_name: str = Field(min_length=2, max_length=100)
+    name: str = Field(min_length=2, max_length=100)
+    role: ParentRole = ParentRole.FATHER
+    referral_code: Optional[str] = None
+    accept_terms: bool = False
+    accept_privacy: bool = False
+    accept_parental_consent: bool = False
+    accept_child_data_protection: bool = False
+
+    @field_validator("password")
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        return _validate_password_field(v)
+
+    @model_validator(mode="after")
+    def passwords_match(self):
+        if self.password != self.confirm_password:
+            raise ValueError("Konfirmasi password tidak cocok")
+        if not self.accept_terms or not self.accept_privacy:
+            raise ValueError("Anda harus menyetujui Syarat & Ketentuan dan Kebijakan Privasi")
+        if not self.accept_parental_consent or not self.accept_child_data_protection:
+            raise ValueError("Anda harus memberikan persetujuan orang tua dan perlindungan data anak")
+        return self
 
 
 class FamilyLogin(BaseModel):
@@ -39,6 +69,8 @@ class TokenResponse(BaseModel):
     role: str
     family_id: Optional[int] = None
     child_id: Optional[int] = None
+    parent_id: Optional[int] = None
+    parent_role: Optional[str] = None
 
 
 class RegisterResponse(BaseModel):
@@ -47,11 +79,41 @@ class RegisterResponse(BaseModel):
     family_id: int
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str = Field(min_length=8)
+    confirm_password: str = Field(min_length=8)
+
+    @field_validator("new_password")
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        return _validate_password_field(v)
+
+    @model_validator(mode="after")
+    def passwords_match(self):
+        if self.new_password != self.confirm_password:
+            raise ValueError("Konfirmasi password tidak cocok")
+        return self
+
+
+class ResendVerificationRequest(BaseModel):
+    email: EmailStr
+
+
+class MessageResponse(BaseModel):
+    message: str
+
+
 class FamilyPublic(BaseModel):
     id: int
     email: str
     family_name: str
     family_code: str
+    referral_code: Optional[str] = None
     rupiah_per_point: int
     daily_point_limit: int
     min_cash_redemption: int
@@ -63,9 +125,72 @@ class FamilyPublic(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ParentPublic(BaseModel):
+    id: int
+    email: str
+    name: str
+    role: ParentRole
+    is_primary: bool
+    email_verified: bool
+
+    model_config = {"from_attributes": True}
+
+
 class ParentPasswordChange(BaseModel):
     current_password: str
-    new_password: str = Field(min_length=6)
+    new_password: str = Field(min_length=8)
+    confirm_password: str = Field(min_length=8)
+
+    @field_validator("new_password")
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        return _validate_password_field(v)
+
+    @model_validator(mode="after")
+    def passwords_match(self):
+        if self.new_password != self.confirm_password:
+            raise ValueError("Konfirmasi password tidak cocok")
+        return self
+
+
+class ParentInviteCreate(BaseModel):
+    email: EmailStr
+    name: str = Field(min_length=2, max_length=100)
+    role: ParentRole
+
+
+class AcceptParentInviteRequest(BaseModel):
+    token: str
+    password: str = Field(min_length=8)
+    confirm_password: str = Field(min_length=8)
+
+    @field_validator("password")
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        return _validate_password_field(v)
+
+    @model_validator(mode="after")
+    def passwords_match(self):
+        if self.password != self.confirm_password:
+            raise ValueError("Konfirmasi password tidak cocok")
+        return self
+
+
+class ReferralInviteCreate(BaseModel):
+    email: EmailStr
+
+
+class ReferralStatsResponse(BaseModel):
+    referral_code: str
+    invites_sent: int
+    families_joined: int
+
+
+class LegalDocumentResponse(BaseModel):
+    version: str
+    title: str
+    content: str
+    redemption_mode: str
 
 
 class PlatformAdminLogin(BaseModel):
@@ -506,6 +631,13 @@ class CalendarDayMission(BaseModel):
     points: int
 
 
+class CalendarDayPointEntry(BaseModel):
+    id: int
+    type: str
+    title: str
+    points: int
+
+
 class CalendarDayAgenda(BaseModel):
     id: int
     title: str
@@ -520,6 +652,7 @@ class CalendarDayData(BaseModel):
     missions: list[CalendarDayMission]
     agenda: list[CalendarDayAgenda]
     net_points: int
+    point_entries: list[CalendarDayPointEntry] = []
 
 
 class CalendarResponse(BaseModel):
@@ -535,6 +668,7 @@ class FamilyOverviewChildDay(BaseModel):
     missions: list[CalendarDayMission]
     agenda: list[CalendarDayAgenda]
     net_points: int
+    point_entries: list[CalendarDayPointEntry] = []
 
 
 class FamilyOverviewDay(BaseModel):

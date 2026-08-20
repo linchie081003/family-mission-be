@@ -20,6 +20,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 
 
+def _enum_values(enum_cls):
+    return [e.value for e in enum_cls]
+
+
 class MissionCategory(str, enum.Enum):
     REGULAR = "regular"
     IBADAH = "ibadah"
@@ -79,6 +83,17 @@ class NotificationType(str, enum.Enum):
     SYSTEM = "system"
 
 
+class ParentRole(str, enum.Enum):
+    FATHER = "father"
+    MOTHER = "mother"
+    GUARDIAN = "guardian"
+
+
+class EmailTokenPurpose(str, enum.Enum):
+    VERIFY_EMAIL = "verify_email"
+    RESET_PASSWORD = "reset_password"
+
+
 class Family(Base):
     __tablename__ = "families"
 
@@ -94,8 +109,13 @@ class Family(Base):
     chat_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     agenda_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    referral_code: Mapped[str | None] = mapped_column(String(8), unique=True, nullable=True, index=True)
+    referred_by_family_id: Mapped[int | None] = mapped_column(
+        ForeignKey("families.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
+    parents: Mapped[list["Parent"]] = relationship(back_populates="family", cascade="all, delete-orphan")
     children: Mapped[list["Child"]] = relationship(back_populates="family", cascade="all, delete-orphan")
     missions: Mapped[list["Mission"]] = relationship(back_populates="family", cascade="all, delete-orphan")
     punishments: Mapped[list["Punishment"]] = relationship(back_populates="family", cascade="all, delete-orphan")
@@ -112,6 +132,80 @@ class Family(Base):
     audit_logs: Mapped[list["AuditLog"]] = relationship(
         back_populates="family", cascade="all, delete-orphan"
     )
+
+
+class Parent(Base):
+    __tablename__ = "parents"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    family_id: Mapped[int] = mapped_column(ForeignKey("families.id", ondelete="CASCADE"), index=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255))
+    name: Mapped[str] = mapped_column(String(100))
+    role: Mapped[ParentRole] = mapped_column(
+        Enum(ParentRole, values_callable=_enum_values, native_enum=False),
+        default=ParentRole.FATHER,
+    )
+    is_primary: Mapped[bool] = mapped_column(Boolean, default=False)
+    email_verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    terms_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    privacy_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    parental_consent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    child_data_protection_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    legal_doc_version: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    family: Mapped["Family"] = relationship(back_populates="parents")
+    email_tokens: Mapped[list["EmailToken"]] = relationship(
+        back_populates="parent", cascade="all, delete-orphan"
+    )
+
+
+class EmailToken(Base):
+    __tablename__ = "email_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    parent_id: Mapped[int] = mapped_column(ForeignKey("parents.id", ondelete="CASCADE"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), index=True)
+    purpose: Mapped[EmailTokenPurpose] = mapped_column(
+        Enum(EmailTokenPurpose, values_callable=_enum_values, native_enum=False)
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    parent: Mapped["Parent"] = relationship(back_populates="email_tokens")
+
+
+class ParentInvite(Base):
+    __tablename__ = "parent_invites"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    family_id: Mapped[int] = mapped_column(ForeignKey("families.id", ondelete="CASCADE"), index=True)
+    invited_by_parent_id: Mapped[int] = mapped_column(ForeignKey("parents.id", ondelete="CASCADE"))
+    email: Mapped[str] = mapped_column(String(255), index=True)
+    name: Mapped[str] = mapped_column(String(100))
+    role: Mapped[ParentRole] = mapped_column(
+        Enum(ParentRole, values_callable=_enum_values, native_enum=False)
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ReferralInvite(Base):
+    __tablename__ = "referral_invites"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    referrer_family_id: Mapped[int] = mapped_column(ForeignKey("families.id", ondelete="CASCADE"), index=True)
+    invitee_email: Mapped[str] = mapped_column(String(255), index=True)
+    referral_code: Mapped[str] = mapped_column(String(8))
+    token_hash: Mapped[str] = mapped_column(String(64), index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class Child(Base):
