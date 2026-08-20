@@ -10,18 +10,26 @@ _buckets: dict[str, deque[float]] = defaultdict(deque)
 _redis_client = None
 
 
-def _get_redis():
+async def _get_redis():
     global _redis_client
     if _redis_client is not None:
         return _redis_client
     if not settings.redis_url:
         return None
     try:
-        import redis
+        import redis.asyncio as redis
+
         _redis_client = redis.from_url(settings.redis_url, decode_responses=True)
         return _redis_client
     except Exception:
         return None
+
+
+async def close_redis() -> None:
+    global _redis_client
+    if _redis_client is not None:
+        await _redis_client.aclose()
+        _redis_client = None
 
 
 def _rate_limit_key(request: Request, scope: str) -> str:
@@ -40,7 +48,7 @@ def _default_limit(scope: str) -> int:
     return limits.get(scope, settings.rate_limit_auth_per_minute)
 
 
-def check_rate_limit(
+async def check_rate_limit(
     request: Request,
     scope: str,
     limit: int | None = None,
@@ -51,12 +59,12 @@ def check_rate_limit(
     now = time.time()
     window_start = now - window_seconds
 
-    r = _get_redis()
+    r = await _get_redis()
     if r:
         redis_key = f"rl:{key}:{window_seconds}"
-        count = r.incr(redis_key)
+        count = await r.incr(redis_key)
         if count == 1:
-            r.expire(redis_key, window_seconds)
+            await r.expire(redis_key, window_seconds)
         if count > max_requests:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,

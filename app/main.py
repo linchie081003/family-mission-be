@@ -61,6 +61,7 @@ from app.services.reminders import check_agenda_reminders, check_inactivity_remi
 from app.services.snapshot_service import run_all_weekly_snapshots
 from app.services.quiz_service import seed_default_templates
 from app.core.migrations import run_light_migrations
+from app.middleware.rate_limit import close_redis
 
 from app.websocket.manager import ws_manager
 
@@ -108,6 +109,7 @@ async def lifespan(app: FastAPI):
 
         await conn.run_sync(Base.metadata.create_all)
 
+    # Schema drift fixes + data backfills — single runtime migration path (see alembic/README).
     await run_light_migrations()
 
     await seed_platform_admin()
@@ -122,6 +124,7 @@ async def lifespan(app: FastAPI):
         scheduler.add_job(run_weekly_snapshots_job, "cron", day_of_week="mon", hour=0, minute=5)
         scheduler.start()
     yield
+    await close_redis()
     if not testing:
         scheduler.shutdown()
 

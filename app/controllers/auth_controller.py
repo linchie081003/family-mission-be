@@ -31,7 +31,7 @@ async def register(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    check_rate_limit(request, "auth_register")
+    await check_rate_limit(request, "auth_register")
     result = await AuthService(db).register(data)
     return result
 
@@ -42,7 +42,7 @@ async def login(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    check_rate_limit(request, "auth_login")
+    await check_rate_limit(request, "auth_login")
     return await AuthService(db).login(data)
 
 
@@ -52,7 +52,7 @@ async def verify_email(
     db: Annotated[AsyncSession, Depends(get_db)],
     token: str = Query(...),
 ):
-    check_rate_limit(request, "verify_email")
+    await check_rate_limit(request, "verify_email")
     return await AuthService(db).verify_email(token)
 
 
@@ -62,7 +62,7 @@ async def resend_verification(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    check_rate_limit(request, "verify_email")
+    await check_rate_limit(request, "verify_email")
     return await AuthService(db).resend_verification(data)
 
 
@@ -72,7 +72,7 @@ async def forgot_password(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    check_rate_limit(request, "forgot_password")
+    await check_rate_limit(request, "forgot_password")
     return await AuthService(db).forgot_password(data)
 
 
@@ -82,7 +82,7 @@ async def reset_password(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    check_rate_limit(request, "forgot_password")
+    await check_rate_limit(request, "forgot_password")
     return await AuthService(db).reset_password(data)
 
 

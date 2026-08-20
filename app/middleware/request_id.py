@@ -20,5 +20,5 @@ class GlobalRateLimitMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         if os.getenv("TESTING", "").lower() not in ("1", "true", "yes"):
             if request.url.path.startswith("/api/") and request.url.path != "/api/health":
-                check_rate_limit(request, "global_api")
+                await check_rate_limit(request, "global_api")
         return await call_next(request)

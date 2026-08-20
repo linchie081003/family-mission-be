@@ -11,6 +11,14 @@ async def run_light_migrations() -> None:
         "ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS sub_material VARCHAR(200)",
         "ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS questions_per_attempt INTEGER",
         "ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS target_all_children BOOLEAN DEFAULT TRUE",
+        "UPDATE quizzes SET target_all_children = TRUE WHERE target_all_children IS NULL",
+        "ALTER TABLE quizzes ALTER COLUMN target_all_children SET DEFAULT TRUE",
+        """
+        DO $$ BEGIN
+            ALTER TABLE quizzes ALTER COLUMN target_all_children SET NOT NULL;
+        EXCEPTION WHEN undefined_column THEN NULL;
+        END $$;
+        """,
         "ALTER TABLE quiz_questions ADD COLUMN IF NOT EXISTS image_url VARCHAR(500)",
         """
         CREATE TABLE IF NOT EXISTS quiz_child_targets (

@@ -30,5 +30,5 @@ async def referral_invite(
     parent: Annotated[Parent, Depends(get_current_parent)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    check_rate_limit(request, "invite", window_seconds=3600, limit=10)
+    await check_rate_limit(request, "invite", window_seconds=3600, limit=10)
     return await ReferralService(db).invite(parent, data)

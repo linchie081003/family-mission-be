@@ -577,7 +577,7 @@ class Quiz(Base):
     points_reward: Mapped[int] = mapped_column(Integer, default=10)
     passing_score: Mapped[int] = mapped_column(Integer, default=70)
     questions_per_attempt: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    target_all_children: Mapped[bool] = mapped_column(Boolean, default=True)
+    target_all_children: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

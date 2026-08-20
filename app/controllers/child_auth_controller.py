@@ -21,7 +21,7 @@ async def list_children_for_login(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    check_rate_limit(request, "child_lookup")
+    await check_rate_limit(request, "child_lookup")
     return await ChildAuthService(db).list_children_for_login(family_code)
 
 
@@ -31,7 +31,7 @@ async def child_login(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    check_rate_limit(request, "child_login")
+    await check_rate_limit(request, "child_login")
     return await ChildAuthService(db).login(data)
 
 
@@ -46,7 +46,7 @@ async def first_time_setup(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    check_rate_limit(request, "child_setup")
+    await check_rate_limit(request, "child_setup")
     return await ChildAuthService(db).first_time_setup(data)
 
 

@@ -1,5 +1,14 @@
-"""Alembic migrations for Family Mission.
+"""Schema migrations for Family Mission.
 
-Run: cd backend && alembic upgrade head
-Startup also applies run_light_migrations() for idempotent schema updates.
+**Runtime source of truth:** `app.core.migrations.run_light_migrations()` — called on every
+backend startup from `main.py`. It applies idempotent DDL + one-time data backfills.
+
+**Alembic:** mirrors major schema revisions for manual/CI use on fresh databases:
+  cd backend && alembic upgrade head
+
+When adding schema changes:
+1. Add idempotent SQL to `run_light_migrations()` (required — this runs in production).
+2. Add a matching Alembic revision here (optional but keeps `alembic upgrade head` in sync).
+
+Do not rely on Alembic alone at runtime; it is not invoked from `main.py`.
 """

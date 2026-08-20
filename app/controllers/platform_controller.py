@@ -34,7 +34,7 @@ async def platform_login(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    check_rate_limit(request, "platform_login")
+    await check_rate_limit(request, "platform_login")
     return await PlatformService(db).login(data)
 
 
