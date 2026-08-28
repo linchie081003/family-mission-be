@@ -158,6 +158,30 @@ async def activate_family(
     return await PlatformService(db).family_public_item(family)
 
 
+@router.post("/families/{family_id}/resend-verification", response_model=PlatformFamilyPublic)
+async def resend_family_verification(
+    family_id: int,
+    request: Request,
+    admin: Annotated[PlatformAdmin, Depends(get_current_platform_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    await check_rate_limit(request, "verify_email")
+    family = await PlatformService(db).resend_verification(admin, family_id)
+    await db.commit()
+    return await PlatformService(db).family_public_item(family)
+
+
+@router.post("/families/{family_id}/verify-email", response_model=PlatformFamilyPublic)
+async def manual_verify_family_email(
+    family_id: int,
+    admin: Annotated[PlatformAdmin, Depends(get_current_platform_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    family = await PlatformService(db).manual_verify_email(admin, family_id)
+    await db.commit()
+    return await PlatformService(db).family_public_item(family)
+
+
 @router.get("/families", response_model=PlatformFamilyListResponse)
 async def list_families(
     admin: Annotated[PlatformAdmin, Depends(get_current_platform_admin)],
@@ -326,7 +350,7 @@ async def create_broadcast(
 ):
     await check_rate_limit(request, "platform_broadcast")
     record = await PlatformNotificationService(db).broadcast_to_families(
-        admin, title=data.title, body=data.body, send_email=data.send_email
+        admin, title=data.title, body=data.body, also_send_email=data.send_email
     )
     await db.commit()
     return record

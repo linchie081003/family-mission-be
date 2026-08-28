@@ -244,6 +244,7 @@ class PlatformFamilyPublic(BaseModel):
     created_at: datetime
     activated_at: Optional[datetime] = None
     activation_preset: Optional[str] = None
+    email_verified: bool = False
     referral_code: Optional[str] = None
     referrer_name: Optional[str] = None
 

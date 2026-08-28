@@ -5,12 +5,16 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import create_access_token
+from app.core.config import settings
 from app.core.constants import AUTH_INVALID_CREDENTIALS
 from app.core.tokens import utcnow
-from app.models.models import Family, PlatformAdmin, PlatformAuditLog
+from app.models.models import EmailTokenPurpose, Family, Parent, PlatformAdmin, PlatformAuditLog
+from app.repositories.email_token_repository import EmailTokenRepository
 from app.repositories.platform_repository import PlatformRepository
 from app.schemas import PlatformAdminLogin, PlatformAdminProfileUpdate, PlatformFamilyFeaturesUpdate, TokenResponse
 from app.services.activation_presets import PRESET_LABELS, ActivationPresetKey, get_preset
+from app.services.auth_service import send_verification_for_parent
+from app.services.email_service import send_tenant_activation_email
 from app.services.platform_audit_service import FEATURE_LABELS, log_platform_feature_change
 from app.services.platform_notification_service import PlatformNotificationService
 
@@ -65,6 +69,11 @@ class PlatformService:
             if referrer:
                 referrer_name = referrer.family_name
 
+        primary = await self.db.scalar(
+            select(Parent).where(Parent.family_id == family.id, Parent.is_primary.is_(True))
+        )
+        email_verified = bool(primary and primary.email_verified)
+
         return {
             "id": family.id,
             "email": family.email,
@@ -81,9 +90,15 @@ class PlatformService:
             "created_at": family.created_at,
             "activated_at": family.activated_at,
             "activation_preset": family.activation_preset,
+            "email_verified": email_verified,
             "referral_code": family.referral_code,
             "referrer_name": referrer_name,
         }
+
+    async def _get_primary_parent(self, family_id: int) -> Parent | None:
+        return await self.db.scalar(
+            select(Parent).where(Parent.family_id == family_id, Parent.is_primary.is_(True))
+        )
 
     async def list_families(
         self,
@@ -159,6 +174,16 @@ class PlatformService:
         family.activation_preset = preset
 
         label = PRESET_LABELS[preset]
+        primary = await self._get_primary_parent(family.id)
+        welcome_email_sent = False
+        if primary:
+            welcome_email_sent = await send_tenant_activation_email(
+                to=primary.email,
+                family_name=family.family_name,
+                preset_label=label,
+                login_url=f"{settings.frontend_base_url}/login",
+            )
+
         entry = PlatformAuditLog(
             platform_admin_id=admin.id,
             family_id=family.id,
@@ -169,7 +194,66 @@ class PlatformService:
                 "family_name": family.family_name,
                 "preset": preset,
                 "features": features,
+                "welcome_email_sent": welcome_email_sent,
             },
+        )
+        self.db.add(entry)
+        await self.db.flush()
+        return family
+
+    async def resend_verification(
+        self,
+        admin: PlatformAdmin,
+        family_id: int,
+    ) -> Family:
+        family = await self.db.get(Family, family_id)
+        if not family:
+            raise HTTPException(status_code=404, detail="Keluarga tidak ditemukan")
+
+        parent = await self._get_primary_parent(family.id)
+        if not parent:
+            raise HTTPException(status_code=404, detail="Orang tua utama tidak ditemukan")
+        if parent.email_verified:
+            raise HTTPException(status_code=400, detail="Email sudah diverifikasi")
+
+        await send_verification_for_parent(self.db, parent.id, parent.email)
+        entry = PlatformAuditLog(
+            platform_admin_id=admin.id,
+            family_id=family.id,
+            feature_key="resend_verification",
+            enabled=True,
+            summary=f"Super Admin mengirim ulang email verifikasi untuk {family.family_name}",
+            details={"family_name": family.family_name, "email": parent.email},
+        )
+        self.db.add(entry)
+        await self.db.flush()
+        return family
+
+    async def manual_verify_email(
+        self,
+        admin: PlatformAdmin,
+        family_id: int,
+    ) -> Family:
+        family = await self.db.get(Family, family_id)
+        if not family:
+            raise HTTPException(status_code=404, detail="Keluarga tidak ditemukan")
+
+        parent = await self._get_primary_parent(family.id)
+        if not parent:
+            raise HTTPException(status_code=404, detail="Orang tua utama tidak ditemukan")
+        if parent.email_verified:
+            raise HTTPException(status_code=400, detail="Email sudah diverifikasi")
+
+        parent.email_verified = True
+        tokens = EmailTokenRepository(self.db)
+        await tokens.invalidate_unused(parent.id, EmailTokenPurpose.VERIFY_EMAIL)
+        entry = PlatformAuditLog(
+            platform_admin_id=admin.id,
+            family_id=family.id,
+            feature_key="manual_verify_email",
+            enabled=True,
+            summary=f"Super Admin verifikasi email manual untuk {family.family_name}",
+            details={"family_name": family.family_name, "email": parent.email},
         )
         self.db.add(entry)
         await self.db.flush()

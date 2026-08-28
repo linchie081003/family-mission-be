@@ -39,6 +39,22 @@ from sqlalchemy import select
 logger = logging.getLogger(__name__)
 
 
+async def send_verification_for_parent(db: AsyncSession, parent_id: int, email: str) -> None:
+    tokens = EmailTokenRepository(db)
+    raw = generate_raw_token()
+    await tokens.invalidate_unused(parent_id, EmailTokenPurpose.VERIFY_EMAIL)
+    await tokens.create(
+        parent_id=parent_id,
+        token_hash=hash_token(raw),
+        purpose=EmailTokenPurpose.VERIFY_EMAIL,
+        expires_at=utcnow() + timedelta(hours=settings.email_token_expire_hours),
+    )
+    link = f"{settings.frontend_base_url}/verify-email?token={raw}"
+    sent = await send_verification_email(to=email, link=link)
+    if not sent:
+        logger.info("DEV verify email for %s: %s", email, link)
+
+
 class AuthService:
     """Business logic: parent registration & authentication."""
 
@@ -67,18 +83,7 @@ class AuthService:
                 self.db.add(Reward(family_id=family.id, title=title, description=desc, points_cost=cost))
 
     async def _send_verification(self, parent_id: int, email: str) -> None:
-        raw = generate_raw_token()
-        await self.tokens.invalidate_unused(parent_id, EmailTokenPurpose.VERIFY_EMAIL)
-        await self.tokens.create(
-            parent_id=parent_id,
-            token_hash=hash_token(raw),
-            purpose=EmailTokenPurpose.VERIFY_EMAIL,
-            expires_at=utcnow() + timedelta(hours=settings.email_token_expire_hours),
-        )
-        link = f"{settings.frontend_base_url}/verify-email?token={raw}"
-        sent = await send_verification_email(to=email, link=link)
-        if not sent:
-            logger.info("DEV verify email for %s: %s", email, link)
+        await send_verification_for_parent(self.db, parent_id, email)
 
     async def register(self, data: FamilyRegister) -> RegisterResponse:
         if await self.parents.email_exists(data.email):

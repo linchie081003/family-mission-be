@@ -79,6 +79,21 @@ Klik link berikut untuk menerima undangan dan set password:
     return await send_email(to=to, subject=f"Undangan Co-Parent — {family_name}", body=body)
 
 
+async def send_tenant_activation_email(
+    *, to: str, family_name: str, preset_label: str, login_url: str
+) -> bool:
+    body = f"""Halo,
+
+Akun keluarga "{family_name}" telah diaktifkan oleh Super Admin Family Mission dengan preset {preset_label}.
+
+Anda dapat login dan mulai menggunakan aplikasi di:
+{login_url}
+
+— Family Mission
+"""
+    return await send_email(to=to, subject=f"Akun Diaktifkan — {family_name}", body=body)
+
+
 async def send_referral_invite_email(*, to: str, referrer_name: str, link: str) -> bool:
     body = f"""Halo,
 

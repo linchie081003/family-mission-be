@@ -1,9 +1,34 @@
+import json
+import time
+from pathlib import Path
+
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.models import Family, NotificationType, Parent, PlatformAdmin, PlatformBroadcast, PlatformAuditLog, PlatformNotification
 from app.services.email_service import send_email
 from app.services.notification_service import notify_parent
+
+_DEBUG_LOG = Path(__file__).resolve().parents[4] / "debug-b984bf.log"
+
+
+def _debug_log(*, hypothesis_id: str, location: str, message: str, data: dict, run_id: str = "pre-fix") -> None:
+    # #region agent log
+    try:
+        payload = {
+            "sessionId": "b984bf",
+            "runId": run_id,
+            "hypothesisId": hypothesis_id,
+            "location": location,
+            "message": message,
+            "data": data,
+            "timestamp": int(time.time() * 1000),
+        }
+        with _DEBUG_LOG.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(payload) + "\n")
+    except OSError:
+        pass
+    # #endregion
 
 
 class PlatformNotificationService:
@@ -73,11 +98,20 @@ class PlatformNotificationService:
         *,
         title: str,
         body: str,
-        send_email: bool = False,
+        also_send_email: bool = False,
     ) -> PlatformBroadcast:
+        # #region agent log
+        _debug_log(
+            hypothesis_id="H1",
+            location="platform_notification_service.py:broadcast_to_families:entry",
+            message="broadcast entry",
+            data={"also_send_email": also_send_email, "send_email_callable": callable(send_email)},
+        )
+        # #endregion
         result = await self.db.execute(select(Family).where(Family.is_active.is_(True)))
         families = list(result.scalars().all())
         reached = 0
+        emails_attempted = 0
         for family in families:
             await notify_parent(
                 self.db,
@@ -88,16 +122,25 @@ class PlatformNotificationService:
                 data={"source": "platform_broadcast"},
             )
             reached += 1
-            if send_email:
+            if also_send_email:
                 parent = await self.db.scalar(
                     select(Parent).where(Parent.family_id == family.id, Parent.is_primary.is_(True))
                 )
                 if parent:
-                    await send_email(
+                    emails_attempted += 1
+                    sent = await send_email(
                         to=parent.email,
                         subject=f"[Family Mission] {title}",
                         body=body,
                     )
+                    # #region agent log
+                    _debug_log(
+                        hypothesis_id="H1",
+                        location="platform_notification_service.py:broadcast_to_families:email",
+                        message="email dispatch result",
+                        data={"family_id": family.id, "sent": sent},
+                    )
+                    # #endregion
 
         record = PlatformBroadcast(
             platform_admin_id=admin.id,
@@ -105,7 +148,7 @@ class PlatformNotificationService:
             body=body,
             target="all_active",
             families_reached=reached,
-            send_email=send_email,
+            send_email=also_send_email,
         )
         self.db.add(record)
         if families:
@@ -115,10 +158,18 @@ class PlatformNotificationService:
                 feature_key="broadcast",
                 enabled=True,
                 summary=f"Super Admin broadcast ke {reached} keluarga: {title}",
-                details={"title": title, "families_reached": reached, "send_email": send_email},
+                details={"title": title, "families_reached": reached, "send_email": also_send_email},
             )
             self.db.add(entry)
         await self.db.flush()
+        # #region agent log
+        _debug_log(
+            hypothesis_id="H1",
+            location="platform_notification_service.py:broadcast_to_families:exit",
+            message="broadcast complete",
+            data={"reached": reached, "emails_attempted": emails_attempted},
+        )
+        # #endregion
         return record
 
     async def list_broadcasts(self, limit: int = 20) -> list[PlatformBroadcast]:
