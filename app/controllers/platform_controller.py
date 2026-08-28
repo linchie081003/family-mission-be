@@ -1,6 +1,6 @@
 """Controller: platform admin (MVC)."""
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,19 +10,36 @@ from app.core.database import get_db
 from app.middleware.rate_limit import check_rate_limit
 from app.models.models import PlatformAdmin
 from app.schemas import (
+    BillingStatsPublic,
+    ManualPaymentCreate,
+    PaymentListResponse,
+    PlanCreate,
+    PlanPublic,
+    PlanUpdate,
     PlatformAdminLogin,
     PlatformAdminProfileUpdate,
     PlatformAdminPublic,
     PlatformAuditLogPublic,
+    PlatformBroadcastCreate,
+    PlatformBroadcastPublic,
+    PlatformFamilyActivate,
     PlatformFamilyFeaturesUpdate,
+    PlatformFamilyListResponse,
     PlatformFamilyPublic,
     PlatformNotificationPublic,
+    PlatformReferralActivity,
+    PlatformReferralLeaderboardEntry,
+    PlatformReferralStats,
     QuizTemplateCreate,
     QuizTemplateDetailPublic,
     QuizTemplateUpdate,
     TokenResponse,
+    TrialExtendRequest,
+    TrialListResponse,
 )
+from app.services.platform_billing_service import PlatformBillingService
 from app.services.platform_notification_service import PlatformNotificationService
+from app.services.platform_referral_service import PlatformReferralService
 from app.services.platform_service import PlatformService
 
 router = APIRouter(prefix="/platform", tags=["platform"])
@@ -104,36 +121,56 @@ async def approve_family(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     family = await PlatformService(db).approve_family(admin, family_id)
-    from app.models.models import Child
-    from sqlalchemy import func, select
-
-    count = await db.scalar(
-        select(func.count()).select_from(Child).where(Child.family_id == family.id, Child.is_active.is_(True))
-    )
-    return {
-        "id": family.id,
-        "email": family.email,
-        "family_name": family.family_name,
-        "family_code": family.family_code,
-        "quiz_enabled": family.quiz_enabled,
-        "chat_enabled": family.chat_enabled,
-        "agenda_enabled": family.agenda_enabled,
-        "rewards_enabled": family.rewards_enabled,
-        "mission_evidence_enabled": family.mission_evidence_enabled,
-        "daily_mission_limit": family.daily_mission_limit,
-        "is_active": family.is_active,
-        "children_count": count or 0,
-        "created_at": family.created_at,
-    }
+    await db.commit()
+    return await PlatformService(db).family_public_item(family)
 
 
-@router.get("/families", response_model=list[PlatformFamilyPublic])
-async def list_families(
+@router.get("/families/pending-activation/count")
+async def pending_activation_count(
     admin: Annotated[PlatformAdmin, Depends(get_current_platform_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     del admin
-    return await PlatformService(db).list_families()
+    count = await PlatformService(db).pending_activation_count()
+    return {"count": count}
+
+
+@router.get("/families/pending-activation", response_model=PlatformFamilyListResponse)
+async def list_pending_activation(
+    admin: Annotated[PlatformAdmin, Depends(get_current_platform_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    limit: int = 50,
+    offset: int = 0,
+):
+    del admin
+    return await PlatformService(db).list_pending_activation(limit=limit, offset=offset)
+
+
+@router.post("/families/{family_id}/activate", response_model=PlatformFamilyPublic)
+async def activate_family(
+    family_id: int,
+    data: PlatformFamilyActivate,
+    admin: Annotated[PlatformAdmin, Depends(get_current_platform_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    family = await PlatformService(db).activate_family(admin, family_id, data.preset)
+    await db.commit()
+    return await PlatformService(db).family_public_item(family)
+
+
+@router.get("/families", response_model=PlatformFamilyListResponse)
+async def list_families(
+    admin: Annotated[PlatformAdmin, Depends(get_current_platform_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    search: str = "",
+    status: Literal["all", "active", "inactive"] = "all",
+    limit: int = 50,
+    offset: int = 0,
+):
+    del admin
+    return await PlatformService(db).list_families(
+        search=search, status=status, limit=limit, offset=offset
+    )
 
 
 @router.patch("/families/{family_id}/features", response_model=PlatformFamilyPublic)
@@ -249,3 +286,180 @@ async def platform_stats(
 ):
     del admin
     return await PlatformService(db).stats()
+
+
+@router.get("/referrals/stats", response_model=PlatformReferralStats)
+async def platform_referral_stats(
+    admin: Annotated[PlatformAdmin, Depends(get_current_platform_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    del admin
+    return await PlatformReferralService(db).stats()
+
+
+@router.get("/referrals/leaderboard", response_model=list[PlatformReferralLeaderboardEntry])
+async def platform_referral_leaderboard(
+    admin: Annotated[PlatformAdmin, Depends(get_current_platform_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    limit: int = 20,
+):
+    del admin
+    return await PlatformReferralService(db).leaderboard(limit=limit)
+
+
+@router.get("/referrals/activity", response_model=list[PlatformReferralActivity])
+async def platform_referral_activity(
+    admin: Annotated[PlatformAdmin, Depends(get_current_platform_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    limit: int = 50,
+):
+    del admin
+    return await PlatformReferralService(db).activity(limit=limit)
+
+
+@router.post("/broadcasts", response_model=PlatformBroadcastPublic)
+async def create_broadcast(
+    data: PlatformBroadcastCreate,
+    request: Request,
+    admin: Annotated[PlatformAdmin, Depends(get_current_platform_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    await check_rate_limit(request, "platform_broadcast")
+    record = await PlatformNotificationService(db).broadcast_to_families(
+        admin, title=data.title, body=data.body, send_email=data.send_email
+    )
+    await db.commit()
+    return record
+
+
+@router.get("/broadcasts", response_model=list[PlatformBroadcastPublic])
+async def list_broadcasts(
+    admin: Annotated[PlatformAdmin, Depends(get_current_platform_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    limit: int = 20,
+):
+    del admin
+    return await PlatformNotificationService(db).list_broadcasts(limit=limit)
+
+
+@router.get("/billing/stats", response_model=BillingStatsPublic)
+async def billing_stats(
+    admin: Annotated[PlatformAdmin, Depends(get_current_platform_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    del admin
+    return await PlatformBillingService(db).billing_stats()
+
+
+@router.get("/plans", response_model=list[PlanPublic])
+async def list_plans(
+    admin: Annotated[PlatformAdmin, Depends(get_current_platform_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    del admin
+    svc = PlatformBillingService(db)
+    plans = await svc.list_plans()
+    result = []
+    for plan in plans:
+        item = PlanPublic.model_validate(plan)
+        item.subscriber_count = await svc.plan_subscriber_count(plan.id)
+        result.append(item)
+    return result
+
+
+@router.post("/plans", response_model=PlanPublic)
+async def create_plan(
+    data: PlanCreate,
+    admin: Annotated[PlatformAdmin, Depends(get_current_platform_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    del admin
+    plan = await PlatformBillingService(db).create_plan(data.model_dump())
+    await db.commit()
+    item = PlanPublic.model_validate(plan)
+    item.subscriber_count = 0
+    return item
+
+
+@router.put("/plans/{plan_id}", response_model=PlanPublic)
+async def update_plan(
+    plan_id: int,
+    data: PlanUpdate,
+    admin: Annotated[PlatformAdmin, Depends(get_current_platform_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    del admin
+    svc = PlatformBillingService(db)
+    plan = await svc.update_plan(plan_id, data.model_dump(exclude_unset=True))
+    await db.commit()
+    item = PlanPublic.model_validate(plan)
+    item.subscriber_count = await svc.plan_subscriber_count(plan.id)
+    return item
+
+
+@router.patch("/plans/{plan_id}/active", response_model=PlanPublic)
+async def toggle_plan_active(
+    plan_id: int,
+    is_active: bool,
+    admin: Annotated[PlatformAdmin, Depends(get_current_platform_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    del admin
+    svc = PlatformBillingService(db)
+    plan = await svc.set_plan_active(plan_id, is_active)
+    await db.commit()
+    item = PlanPublic.model_validate(plan)
+    item.subscriber_count = await svc.plan_subscriber_count(plan.id)
+    return item
+
+
+@router.get("/payments", response_model=PaymentListResponse)
+async def list_payments(
+    admin: Annotated[PlatformAdmin, Depends(get_current_platform_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    search: str = "",
+    status: str = "all",
+    limit: int = 50,
+    offset: int = 0,
+):
+    del admin
+    return await PlatformBillingService(db).list_payments(
+        search=search, status=status, limit=limit, offset=offset
+    )
+
+
+@router.post("/payments/manual")
+async def create_manual_payment(
+    data: ManualPaymentCreate,
+    admin: Annotated[PlatformAdmin, Depends(get_current_platform_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    del admin
+    payment = await PlatformBillingService(db).create_manual_payment(data.model_dump())
+    await db.commit()
+    return {"id": payment.id, "status": payment.status}
+
+
+@router.get("/trials", response_model=TrialListResponse)
+async def list_trials(
+    admin: Annotated[PlatformAdmin, Depends(get_current_platform_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    limit: int = 50,
+    offset: int = 0,
+):
+    del admin
+    return await PlatformBillingService(db).list_trials(limit=limit, offset=offset)
+
+
+@router.patch("/trials/{subscription_id}/extend")
+async def extend_trial(
+    subscription_id: int,
+    data: TrialExtendRequest,
+    admin: Annotated[PlatformAdmin, Depends(get_current_platform_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    sub = await PlatformBillingService(db).extend_trial(
+        admin.id, subscription_id, data.extra_days, data.reason
+    )
+    await db.commit()
+    return {"subscription_id": sub.id, "trial_ends_at": sub.trial_ends_at}

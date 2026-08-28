@@ -1,12 +1,16 @@
+from typing import Literal
+
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import create_access_token
 from app.core.constants import AUTH_INVALID_CREDENTIALS
+from app.core.tokens import utcnow
 from app.models.models import Family, PlatformAdmin, PlatformAuditLog
 from app.repositories.platform_repository import PlatformRepository
 from app.schemas import PlatformAdminLogin, PlatformAdminProfileUpdate, PlatformFamilyFeaturesUpdate, TokenResponse
+from app.services.activation_presets import PRESET_LABELS, ActivationPresetKey, get_preset
 from app.services.platform_audit_service import FEATURE_LABELS, log_platform_feature_change
 from app.services.platform_notification_service import PlatformNotificationService
 
@@ -41,35 +45,135 @@ class PlatformService:
         token = create_access_token({"platform_admin_id": admin.id, "role": "platform_admin"})
         return TokenResponse(access_token=token, role="platform_admin")
 
-    async def list_families(self) -> list[dict]:
+    def _family_query_base(self):
         from app.models.models import Child
 
-        result = await self.db.execute(select(Family).order_by(Family.created_at.desc()))
+        return select(Family).order_by(Family.created_at.desc())
+
+    async def _family_to_dict(self, family: Family) -> dict:
+        from app.models.models import Child
+
+        count = await self.db.scalar(
+            select(func.count()).select_from(Child).where(
+                Child.family_id == family.id,
+                Child.is_active.is_(True),
+            )
+        )
+        referrer_name = None
+        if family.referred_by_family_id:
+            referrer = await self.db.get(Family, family.referred_by_family_id)
+            if referrer:
+                referrer_name = referrer.family_name
+
+        return {
+            "id": family.id,
+            "email": family.email,
+            "family_name": family.family_name,
+            "family_code": family.family_code,
+            "quiz_enabled": family.quiz_enabled,
+            "chat_enabled": family.chat_enabled,
+            "agenda_enabled": family.agenda_enabled,
+            "rewards_enabled": family.rewards_enabled,
+            "mission_evidence_enabled": family.mission_evidence_enabled,
+            "daily_mission_limit": family.daily_mission_limit,
+            "is_active": family.is_active,
+            "children_count": count or 0,
+            "created_at": family.created_at,
+            "activated_at": family.activated_at,
+            "activation_preset": family.activation_preset,
+            "referral_code": family.referral_code,
+            "referrer_name": referrer_name,
+        }
+
+    async def list_families(
+        self,
+        *,
+        search: str = "",
+        status: Literal["all", "active", "inactive"] = "all",
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict:
+        q = select(Family)
+        count_q = select(func.count()).select_from(Family)
+
+        if search.strip():
+            term = f"%{search.strip()}%"
+            filt = or_(
+                Family.family_name.ilike(term),
+                Family.email.ilike(term),
+                Family.family_code.ilike(term),
+            )
+            q = q.where(filt)
+            count_q = count_q.where(filt)
+
+        if status == "active":
+            q = q.where(Family.is_active.is_(True))
+            count_q = count_q.where(Family.is_active.is_(True))
+        elif status == "inactive":
+            q = q.where(Family.is_active.is_(False))
+            count_q = count_q.where(Family.is_active.is_(False))
+
+        total = await self.db.scalar(count_q) or 0
+        q = q.order_by(Family.created_at.desc()).limit(min(max(limit, 1), 200)).offset(max(offset, 0))
+        result = await self.db.execute(q)
         families = list(result.scalars().all())
         items = []
         for family in families:
-            count = await self.db.scalar(
-                select(func.count()).select_from(Child).where(
-                    Child.family_id == family.id,
-                    Child.is_active.is_(True),
-                )
-            )
-            items.append({
-                "id": family.id,
-                "email": family.email,
+            items.append(await self._family_to_dict(family))
+        return {"items": items, "total": total, "limit": limit, "offset": offset}
+
+    async def list_pending_activation(self, *, limit: int = 50, offset: int = 0) -> dict:
+        q = (
+            select(Family)
+            .where(Family.activated_at.is_(None))
+            .order_by(Family.created_at.desc())
+            .limit(min(max(limit, 1), 200))
+            .offset(max(offset, 0))
+        )
+        count_q = select(func.count()).select_from(Family).where(Family.activated_at.is_(None))
+        total = await self.db.scalar(count_q) or 0
+        result = await self.db.execute(q)
+        families = list(result.scalars().all())
+        items = [await self._family_to_dict(f) for f in families]
+        return {"items": items, "total": total, "limit": limit, "offset": offset}
+
+    async def pending_activation_count(self) -> int:
+        return await self.db.scalar(
+            select(func.count()).select_from(Family).where(Family.activated_at.is_(None))
+        ) or 0
+
+    async def activate_family(
+        self,
+        admin: PlatformAdmin,
+        family_id: int,
+        preset: ActivationPresetKey,
+    ) -> Family:
+        family = await self.db.get(Family, family_id)
+        if not family:
+            raise HTTPException(status_code=404, detail="Keluarga tidak ditemukan")
+
+        features = get_preset(preset)
+        for field, value in features.items():
+            setattr(family, field, value)
+        family.activated_at = utcnow()
+        family.activation_preset = preset
+
+        label = PRESET_LABELS[preset]
+        entry = PlatformAuditLog(
+            platform_admin_id=admin.id,
+            family_id=family.id,
+            feature_key=f"activation_{preset}",
+            enabled=True,
+            summary=f"Super Admin mengaktifkan preset {label} untuk keluarga {family.family_name}",
+            details={
                 "family_name": family.family_name,
-                "family_code": family.family_code,
-                "quiz_enabled": family.quiz_enabled,
-                "chat_enabled": family.chat_enabled,
-                "agenda_enabled": family.agenda_enabled,
-                "rewards_enabled": family.rewards_enabled,
-                "mission_evidence_enabled": family.mission_evidence_enabled,
-                "daily_mission_limit": family.daily_mission_limit,
-                "is_active": family.is_active,
-                "children_count": count or 0,
-                "created_at": family.created_at,
-            })
-        return items
+                "preset": preset,
+                "features": features,
+            },
+        )
+        self.db.add(entry)
+        await self.db.flush()
+        return family
 
     async def update_features(
         self,
@@ -130,29 +234,7 @@ class PlatformService:
         return family
 
     async def family_public_item(self, family: Family) -> dict:
-        from app.models.models import Child
-
-        count = await self.db.scalar(
-            select(func.count()).select_from(Child).where(
-                Child.family_id == family.id,
-                Child.is_active.is_(True),
-            )
-        )
-        return {
-            "id": family.id,
-            "email": family.email,
-            "family_name": family.family_name,
-            "family_code": family.family_code,
-            "quiz_enabled": family.quiz_enabled,
-            "chat_enabled": family.chat_enabled,
-            "agenda_enabled": family.agenda_enabled,
-            "rewards_enabled": family.rewards_enabled,
-            "mission_evidence_enabled": family.mission_evidence_enabled,
-            "daily_mission_limit": family.daily_mission_limit,
-            "is_active": family.is_active,
-            "children_count": count or 0,
-            "created_at": family.created_at,
-        }
+        return await self._family_to_dict(family)
 
     async def list_audit(self, limit: int = 100) -> list[PlatformAuditLog]:
         result = await self.db.execute(
@@ -167,6 +249,7 @@ class PlatformService:
         pending_count = await self.db.scalar(
             select(func.count()).select_from(Family).where(Family.is_active.is_(False))
         ) or 0
+        pending_activation = await self.pending_activation_count()
         enabled_counts = {}
         for field in FEATURE_TOGGLE_FIELDS:
             count = await self.db.scalar(
@@ -181,6 +264,7 @@ class PlatformService:
         return {
             "families_total": families_count,
             "families_pending": pending_count,
+            "pending_activation_count": pending_activation,
             "platform_notifications_unread": await notif_service.unread_count(),
             "features_enabled": enabled_counts,
             "feature_labels": {

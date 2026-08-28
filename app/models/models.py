@@ -116,6 +116,8 @@ class Family(Base):
     referred_by_family_id: Mapped[int | None] = mapped_column(
         ForeignKey("families.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    activation_preset: Mapped[str | None] = mapped_column(String(20), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     parents: Mapped[list["Parent"]] = relationship(back_populates="family", cascade="all, delete-orphan")
@@ -627,6 +629,82 @@ class QuizAttempt(Base):
 
     child: Mapped["Child"] = relationship()
     quiz: Mapped["Quiz"] = relationship(back_populates="attempts")
+
+
+class Plan(Base):
+    __tablename__ = "plans"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    slug: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(100))
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    price_monthly: Mapped[int] = mapped_column(Integer, default=0)
+    price_yearly: Mapped[int] = mapped_column(Integer, default=0)
+    currency: Mapped[str] = mapped_column(String(3), default="IDR")
+    trial_days: Mapped[int] = mapped_column(Integer, default=14)
+    feature_preset: Mapped[dict] = mapped_column(JSON, default=dict)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    subscriptions: Mapped[list["Subscription"]] = relationship(back_populates="plan")
+
+
+class Subscription(Base):
+    __tablename__ = "subscriptions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    family_id: Mapped[int] = mapped_column(ForeignKey("families.id", ondelete="CASCADE"), unique=True, index=True)
+    plan_id: Mapped[int] = mapped_column(ForeignKey("plans.id"), index=True)
+    status: Mapped[str] = mapped_column(String(20), default="trial", index=True)
+    trial_ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    current_period_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    current_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancel_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    manual_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    family: Mapped["Family"] = relationship()
+    plan: Mapped["Plan"] = relationship(back_populates="subscriptions")
+
+
+class Payment(Base):
+    __tablename__ = "payments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    family_id: Mapped[int] = mapped_column(ForeignKey("families.id", ondelete="CASCADE"), index=True)
+    subscription_id: Mapped[int | None] = mapped_column(ForeignKey("subscriptions.id", ondelete="SET NULL"), nullable=True)
+    amount: Mapped[int] = mapped_column(Integer)
+    currency: Mapped[str] = mapped_column(String(3), default="IDR")
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    provider: Mapped[str] = mapped_column(String(30), default="manual")
+    provider_ref: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    invoice_number: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    payment_metadata: Mapped[dict | None] = mapped_column("metadata", JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    family: Mapped["Family"] = relationship()
+    subscription: Mapped["Subscription | None"] = relationship()
+
+
+class PlatformBroadcast(Base):
+    __tablename__ = "platform_broadcasts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    platform_admin_id: Mapped[int] = mapped_column(ForeignKey("platform_admins.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    body: Mapped[str] = mapped_column(Text)
+    target: Mapped[str] = mapped_column(String(20), default="all_active")
+    families_reached: Mapped[int] = mapped_column(Integer, default=0)
+    send_email: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    platform_admin: Mapped["PlatformAdmin"] = relationship()
 
 
 class ChatMessage(Base):

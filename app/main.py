@@ -113,6 +113,15 @@ async def lifespan(app: FastAPI):
     await run_light_migrations()
 
     await seed_platform_admin()
+    # #region agent log
+    import json
+    import time
+    try:
+        with open(r"D:\Lesy\Personal\family project\family app\debug-b984bf.log", "a", encoding="utf-8") as _f:
+            _f.write(json.dumps({"sessionId": "b984bf", "hypothesisId": "H2", "location": "main.py:lifespan", "message": "seed_platform_admin_ok", "timestamp": int(time.time() * 1000)}) + "\n")
+    except OSError:
+        pass
+    # #endregion
     async with async_session() as db:
         await seed_default_templates(db)
         await db.commit()

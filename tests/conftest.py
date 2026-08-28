@@ -51,14 +51,10 @@ async def registered_parent(client: AsyncClient, platform_admin_headers: dict):
     res = await client.post("/api/auth/register", json=payload)
     assert res.status_code == 200, res.text
     data = res.json()
-    enable = await client.patch(
-        f"/api/platform/families/{data['family_id']}/features",
+    enable = await client.post(
+        f"/api/platform/families/{data['family_id']}/activate",
         headers=platform_admin_headers,
-        json={
-            "rewards_enabled": True,
-            "mission_evidence_enabled": True,
-            "daily_mission_limit": None,
-        },
+        json={"preset": "family"},
     )
     assert enable.status_code == 200, enable.text
     login = await client.post(

@@ -116,6 +116,21 @@ class AuthService:
         if os.getenv("TESTING", "").lower() in ("1", "true", "yes"):
             parent.email_verified = True
         await self._send_verification(parent.id, parent.email)
+        from app.services.platform_notification_service import PlatformNotificationService
+
+        await PlatformNotificationService(self.db).notify_family_registration(family)
+        if referred_by_id and data.referral_code:
+            from app.models.models import ReferralInvite
+            invite_result = await self.db.execute(
+                select(ReferralInvite).where(
+                    ReferralInvite.referrer_family_id == referred_by_id,
+                    ReferralInvite.invitee_email == data.email.lower(),
+                    ReferralInvite.accepted_at.is_(None),
+                )
+            )
+            invite = invite_result.scalar_one_or_none()
+            if invite:
+                invite.accepted_at = now
         await self.db.commit()
 
         return RegisterResponse(

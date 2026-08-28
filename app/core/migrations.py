@@ -1,6 +1,104 @@
+import json
+import time
+
 from sqlalchemy import text
 
 from app.core.database import engine
+
+# #region agent log
+_DEBUG_LOG_PATH = r"D:\Lesy\Personal\family project\family app\debug-b984bf.log"
+
+
+def _debug_log(hypothesis_id: str, location: str, message: str, data: dict | None = None) -> None:
+    try:
+        import os
+
+        payload = {
+            "sessionId": "b984bf",
+            "hypothesisId": hypothesis_id,
+            "location": location,
+            "message": message,
+            "data": data or {},
+            "timestamp": int(time.time() * 1000),
+        }
+        with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps(payload) + "\n")
+    except OSError:
+        pass
+
+
+# #endregion
+
+_DEFAULT_PLANS = (
+    {
+        "slug": "standard",
+        "name": "Standar",
+        "description": "Paket dasar — misi checklist tanpa reward premium",
+        "price_monthly": 0,
+        "price_yearly": 0,
+        "currency": "IDR",
+        "trial_days": 14,
+        "sort_order": 1,
+        "feature_preset": {
+            "rewards_enabled": False,
+            "mission_evidence_enabled": False,
+            "quiz_enabled": False,
+            "chat_enabled": False,
+            "agenda_enabled": False,
+            "daily_mission_limit": 5,
+        },
+    },
+    {
+        "slug": "family",
+        "name": "Family",
+        "description": "Paket lengkap — semua fitur aktif",
+        "price_monthly": 99000,
+        "price_yearly": 990000,
+        "currency": "IDR",
+        "trial_days": 14,
+        "sort_order": 2,
+        "feature_preset": {
+            "rewards_enabled": True,
+            "mission_evidence_enabled": True,
+            "quiz_enabled": True,
+            "chat_enabled": True,
+            "agenda_enabled": True,
+            "daily_mission_limit": None,
+        },
+    },
+)
+
+
+async def _seed_default_plans(conn) -> None:
+    """Seed plan catalog via bind params — avoids SQLAlchemy text() parsing :false/:null in JSON."""
+    # #region agent log
+    _debug_log("H1", "migrations.py:_seed_default_plans", "seed_start", {})
+    # #endregion
+    for plan in _DEFAULT_PLANS:
+        exists = await conn.execute(
+            text("SELECT 1 FROM plans WHERE slug = :slug LIMIT 1"),
+            {"slug": plan["slug"]},
+        )
+        if exists.first():
+            continue
+        await conn.execute(
+            text("""
+                INSERT INTO plans (
+                    slug, name, description, price_monthly, price_yearly, currency,
+                    trial_days, feature_preset, is_active, sort_order
+                ) VALUES (
+                    :slug, :name, :description, :price_monthly, :price_yearly, :currency,
+                    :trial_days, CAST(:feature_preset AS jsonb), TRUE, :sort_order
+                )
+            """),
+            {
+                **{k: plan[k] for k in ("slug", "name", "description", "price_monthly", "price_yearly", "currency", "trial_days", "sort_order")},
+                "feature_preset": json.dumps(plan["feature_preset"]),
+            },
+        )
+        # #region agent log
+        _debug_log("H1", "migrations.py:_seed_default_plans", "seeded_plan", {"slug": plan["slug"]})
+        # #endregion
 
 
 async def run_light_migrations() -> None:
@@ -121,6 +219,70 @@ async def run_light_migrations() -> None:
         "ALTER TABLE families ADD COLUMN IF NOT EXISTS rewards_enabled BOOLEAN DEFAULT FALSE",
         "ALTER TABLE families ADD COLUMN IF NOT EXISTS mission_evidence_enabled BOOLEAN DEFAULT FALSE",
         "ALTER TABLE families ADD COLUMN IF NOT EXISTS daily_mission_limit INTEGER",
+        "ALTER TABLE families ADD COLUMN IF NOT EXISTS activated_at TIMESTAMPTZ",
+        "ALTER TABLE families ADD COLUMN IF NOT EXISTS activation_preset VARCHAR(20)",
+        """
+        CREATE TABLE IF NOT EXISTS plans (
+            id SERIAL PRIMARY KEY,
+            slug VARCHAR(50) NOT NULL UNIQUE,
+            name VARCHAR(100) NOT NULL,
+            description TEXT,
+            price_monthly INTEGER NOT NULL DEFAULT 0,
+            price_yearly INTEGER NOT NULL DEFAULT 0,
+            currency VARCHAR(3) NOT NULL DEFAULT 'IDR',
+            trial_days INTEGER NOT NULL DEFAULT 14,
+            feature_preset JSONB NOT NULL DEFAULT '{}',
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS subscriptions (
+            id SERIAL PRIMARY KEY,
+            family_id INTEGER NOT NULL UNIQUE REFERENCES families(id) ON DELETE CASCADE,
+            plan_id INTEGER NOT NULL REFERENCES plans(id),
+            status VARCHAR(20) NOT NULL DEFAULT 'trial',
+            trial_ends_at TIMESTAMPTZ,
+            current_period_start TIMESTAMPTZ,
+            current_period_end TIMESTAMPTZ,
+            cancelled_at TIMESTAMPTZ,
+            cancel_reason TEXT,
+            manual_notes TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS payments (
+            id SERIAL PRIMARY KEY,
+            family_id INTEGER NOT NULL REFERENCES families(id) ON DELETE CASCADE,
+            subscription_id INTEGER REFERENCES subscriptions(id) ON DELETE SET NULL,
+            amount INTEGER NOT NULL,
+            currency VARCHAR(3) NOT NULL DEFAULT 'IDR',
+            status VARCHAR(20) NOT NULL DEFAULT 'pending',
+            provider VARCHAR(30) NOT NULL DEFAULT 'manual',
+            provider_ref VARCHAR(200),
+            invoice_number VARCHAR(50),
+            description TEXT,
+            paid_at TIMESTAMPTZ,
+            metadata JSONB,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS platform_broadcasts (
+            id SERIAL PRIMARY KEY,
+            platform_admin_id INTEGER NOT NULL REFERENCES platform_admins(id) ON DELETE CASCADE,
+            title VARCHAR(200) NOT NULL,
+            body TEXT NOT NULL,
+            target VARCHAR(20) NOT NULL DEFAULT 'all_active',
+            families_reached INTEGER NOT NULL DEFAULT 0,
+            send_email BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
     ]
     async with engine.begin() as conn:
         for stmt in statements:
@@ -168,3 +330,21 @@ async def run_light_migrations() -> None:
                 )
               )
         """))
+
+        await conn.execute(text("""
+            UPDATE families SET activated_at = created_at
+            WHERE activated_at IS NULL
+              AND (
+                rewards_enabled = TRUE
+                OR mission_evidence_enabled = TRUE
+                OR quiz_enabled = TRUE
+                OR chat_enabled = TRUE
+                OR agenda_enabled = TRUE
+                OR EXISTS (SELECT 1 FROM children c WHERE c.family_id = families.id)
+              )
+        """))
+
+        await _seed_default_plans(conn)
+        # #region agent log
+        _debug_log("H1", "migrations.py:run_light_migrations", "migrations_complete", {})
+        # #endregion

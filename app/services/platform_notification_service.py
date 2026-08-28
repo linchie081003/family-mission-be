@@ -1,8 +1,9 @@
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.models import Family, PlatformAdmin, PlatformNotification
+from app.models.models import Family, NotificationType, Parent, PlatformAdmin, PlatformBroadcast, PlatformAuditLog, PlatformNotification
 from app.services.email_service import send_email
+from app.services.notification_service import notify_parent
 
 
 class PlatformNotificationService:
@@ -65,3 +66,65 @@ class PlatformNotificationService:
             update(PlatformNotification).where(PlatformNotification.is_read.is_(False)).values(is_read=True)
         )
         return result.rowcount or 0
+
+    async def broadcast_to_families(
+        self,
+        admin: PlatformAdmin,
+        *,
+        title: str,
+        body: str,
+        send_email: bool = False,
+    ) -> PlatformBroadcast:
+        result = await self.db.execute(select(Family).where(Family.is_active.is_(True)))
+        families = list(result.scalars().all())
+        reached = 0
+        for family in families:
+            await notify_parent(
+                self.db,
+                family.id,
+                NotificationType.SYSTEM,
+                title,
+                body,
+                data={"source": "platform_broadcast"},
+            )
+            reached += 1
+            if send_email:
+                parent = await self.db.scalar(
+                    select(Parent).where(Parent.family_id == family.id, Parent.is_primary.is_(True))
+                )
+                if parent:
+                    await send_email(
+                        to=parent.email,
+                        subject=f"[Family Mission] {title}",
+                        body=body,
+                    )
+
+        record = PlatformBroadcast(
+            platform_admin_id=admin.id,
+            title=title,
+            body=body,
+            target="all_active",
+            families_reached=reached,
+            send_email=send_email,
+        )
+        self.db.add(record)
+        if families:
+            entry = PlatformAuditLog(
+                platform_admin_id=admin.id,
+                family_id=families[0].id,
+                feature_key="broadcast",
+                enabled=True,
+                summary=f"Super Admin broadcast ke {reached} keluarga: {title}",
+                details={"title": title, "families_reached": reached, "send_email": send_email},
+            )
+            self.db.add(entry)
+        await self.db.flush()
+        return record
+
+    async def list_broadcasts(self, limit: int = 20) -> list[PlatformBroadcast]:
+        result = await self.db.execute(
+            select(PlatformBroadcast)
+            .order_by(PlatformBroadcast.created_at.desc())
+            .limit(min(max(limit, 1), 100))
+        )
+        return list(result.scalars().all())

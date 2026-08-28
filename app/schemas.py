@@ -242,8 +242,23 @@ class PlatformFamilyPublic(BaseModel):
     is_active: bool
     children_count: int = 0
     created_at: datetime
+    activated_at: Optional[datetime] = None
+    activation_preset: Optional[str] = None
+    referral_code: Optional[str] = None
+    referrer_name: Optional[str] = None
 
     model_config = {"from_attributes": True}
+
+
+class PlatformFamilyListResponse(BaseModel):
+    items: list[PlatformFamilyPublic]
+    total: int
+    limit: int
+    offset: int
+
+
+class PlatformFamilyActivate(BaseModel):
+    preset: Literal["standard", "family"]
 
 
 class PlatformFamilyFeaturesUpdate(BaseModel):
@@ -267,6 +282,159 @@ class PlatformAuditLogPublic(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class PlatformReferralStats(BaseModel):
+    total_invites: int
+    total_conversions: int
+    families_with_code: int
+    conversion_rate: float
+
+
+class PlatformReferralLeaderboardEntry(BaseModel):
+    family_id: int
+    family_name: str
+    referral_code: Optional[str]
+    invites_sent: int
+    families_joined: int
+
+
+class PlatformReferralActivity(BaseModel):
+    family_id: int
+    family_name: str
+    email: str
+    referrer_id: Optional[int]
+    referrer_name: Optional[str]
+    created_at: datetime
+
+
+class PlatformBroadcastCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    body: str = Field(min_length=1, max_length=1000)
+    send_email: bool = False
+
+
+class PlatformBroadcastPublic(BaseModel):
+    id: int
+    platform_admin_id: int
+    title: str
+    body: str
+    target: str
+    families_reached: int
+    send_email: bool
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class PlanPublic(BaseModel):
+    id: int
+    slug: str
+    name: str
+    description: Optional[str] = None
+    price_monthly: int
+    price_yearly: int
+    currency: str
+    trial_days: int
+    feature_preset: dict
+    is_active: bool
+    sort_order: int
+    subscriber_count: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class PlanCreate(BaseModel):
+    slug: str = Field(min_length=1, max_length=50)
+    name: str = Field(min_length=1, max_length=100)
+    description: Optional[str] = None
+    price_monthly: int = Field(ge=0)
+    price_yearly: int = Field(ge=0)
+    currency: str = "IDR"
+    trial_days: int = Field(ge=0, default=14)
+    feature_preset: dict = Field(default_factory=dict)
+    is_active: bool = True
+    sort_order: int = 0
+
+
+class PlanUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    description: Optional[str] = None
+    price_monthly: Optional[int] = Field(default=None, ge=0)
+    price_yearly: Optional[int] = Field(default=None, ge=0)
+    trial_days: Optional[int] = Field(default=None, ge=0)
+    feature_preset: Optional[dict] = None
+    is_active: Optional[bool] = None
+    sort_order: Optional[int] = None
+
+
+class PaymentPublic(BaseModel):
+    id: int
+    family_id: int
+    family_name: str
+    email: str
+    amount: int
+    currency: str
+    status: str
+    provider: str
+    provider_ref: Optional[str] = None
+    invoice_number: Optional[str] = None
+    description: Optional[str] = None
+    paid_at: Optional[datetime] = None
+    created_at: datetime
+
+
+class PaymentListResponse(BaseModel):
+    items: list[PaymentPublic]
+    total: int
+    limit: int
+    offset: int
+
+
+class ManualPaymentCreate(BaseModel):
+    family_id: int
+    amount: int = Field(gt=0)
+    currency: str = "IDR"
+    subscription_id: Optional[int] = None
+    provider_ref: Optional[str] = None
+    invoice_number: Optional[str] = None
+    description: Optional[str] = None
+
+
+class TrialEntryPublic(BaseModel):
+    subscription_id: int
+    family_id: int
+    family_name: str
+    email: str
+    plan_name: str
+    plan_slug: str
+    trial_ends_at: Optional[datetime]
+    days_remaining: Optional[int]
+    referral_code: Optional[str] = None
+    manual_notes: Optional[str] = None
+
+
+class TrialListResponse(BaseModel):
+    items: list[TrialEntryPublic]
+    total: int
+    limit: int
+    offset: int
+
+
+class TrialExtendRequest(BaseModel):
+    extra_days: int = Field(ge=1, le=365)
+    reason: str = Field(min_length=1, max_length=500)
+
+
+class BillingStatsPublic(BaseModel):
+    mrr: int
+    revenue_this_month: int
+    revenue_last_month: int
+    trial_active_count: int
+    trial_conversion_rate: float
+    tier_breakdown: list[dict]
 
 
 # Child
