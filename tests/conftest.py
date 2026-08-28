@@ -45,12 +45,22 @@ async def client():
 
 
 @pytest_asyncio.fixture
-async def registered_parent(client: AsyncClient):
+async def registered_parent(client: AsyncClient, platform_admin_headers: dict):
     uid = uuid.uuid4().hex[:8]
     payload = _register_payload(uid)
     res = await client.post("/api/auth/register", json=payload)
     assert res.status_code == 200, res.text
     data = res.json()
+    enable = await client.patch(
+        f"/api/platform/families/{data['family_id']}/features",
+        headers=platform_admin_headers,
+        json={
+            "rewards_enabled": True,
+            "mission_evidence_enabled": True,
+            "daily_mission_limit": None,
+        },
+    )
+    assert enable.status_code == 200, enable.text
     login = await client.post(
         "/api/auth/login",
         json={"email": payload["email"], "password": TEST_PASSWORD},

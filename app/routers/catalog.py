@@ -8,13 +8,14 @@ from app.auth import get_current_family
 from app.database import get_db
 from app.models.models import Family, Punishment, Reward
 from app.schemas import PunishmentCreate, PunishmentPublic, RewardCreate, RewardPublic
+from app.services.feature_guard import require_feature
 
 router = APIRouter(prefix="/catalog", tags=["catalog"])
 
 
 @router.get("/punishments", response_model=list[PunishmentPublic])
 async def list_punishments(
-    family: Annotated[Family, Depends(get_current_family)],
+    family: Annotated[Family, Depends(require_feature("reward"))],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     result = await db.execute(select(Punishment).where(Punishment.family_id == family.id, Punishment.is_active == True))
@@ -24,7 +25,7 @@ async def list_punishments(
 @router.post("/punishments", response_model=PunishmentPublic)
 async def create_punishment(
     data: PunishmentCreate,
-    family: Annotated[Family, Depends(get_current_family)],
+    family: Annotated[Family, Depends(require_feature("reward"))],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     p = Punishment(family_id=family.id, title=data.title, points_deducted=data.points_deducted)
@@ -36,7 +37,7 @@ async def create_punishment(
 @router.delete("/punishments/{punishment_id}")
 async def delete_punishment(
     punishment_id: int,
-    family: Annotated[Family, Depends(get_current_family)],
+    family: Annotated[Family, Depends(require_feature("reward"))],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     result = await db.execute(select(Punishment).where(Punishment.id == punishment_id, Punishment.family_id == family.id))
@@ -49,7 +50,7 @@ async def delete_punishment(
 
 @router.get("/rewards", response_model=list[RewardPublic])
 async def list_rewards(
-    family: Annotated[Family, Depends(get_current_family)],
+    family: Annotated[Family, Depends(require_feature("reward"))],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     result = await db.execute(select(Reward).where(Reward.family_id == family.id, Reward.is_active == True))
@@ -59,7 +60,7 @@ async def list_rewards(
 @router.post("/rewards", response_model=RewardPublic)
 async def create_reward(
     data: RewardCreate,
-    family: Annotated[Family, Depends(get_current_family)],
+    family: Annotated[Family, Depends(require_feature("reward"))],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     r = Reward(family_id=family.id, title=data.title, description=data.description, points_cost=data.points_cost)
@@ -71,7 +72,7 @@ async def create_reward(
 @router.delete("/rewards/{reward_id}")
 async def delete_reward(
     reward_id: int,
-    family: Annotated[Family, Depends(get_current_family)],
+    family: Annotated[Family, Depends(require_feature("reward"))],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     result = await db.execute(select(Reward).where(Reward.id == reward_id, Reward.family_id == family.id))

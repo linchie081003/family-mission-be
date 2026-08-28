@@ -108,6 +108,9 @@ class Family(Base):
     quiz_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     chat_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     agenda_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    rewards_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    mission_evidence_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    daily_mission_limit: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     referral_code: Mapped[str | None] = mapped_column(String(8), unique=True, nullable=True, index=True)
     referred_by_family_id: Mapped[int | None] = mapped_column(

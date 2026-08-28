@@ -49,20 +49,22 @@ class AuthService:
         self.tokens = EmailTokenRepository(db)
 
     async def _seed_defaults(self, family: Family) -> None:
-        for code, name, desc, icon, min_pts in DEFAULT_BADGES:
-            existing = await self.db.execute(select(BadgeDefinition).where(BadgeDefinition.code == code))
-            if not existing.scalar_one_or_none():
-                self.db.add(BadgeDefinition(code=code, name=name, description=desc, icon=icon, min_lifetime_points=min_pts))
+        if family.rewards_enabled:
+            for code, name, desc, icon, min_pts in DEFAULT_BADGES:
+                existing = await self.db.execute(select(BadgeDefinition).where(BadgeDefinition.code == code))
+                if not existing.scalar_one_or_none():
+                    self.db.add(BadgeDefinition(code=code, name=name, description=desc, icon=icon, min_lifetime_points=min_pts))
 
         for title, cat, pts, diff in DEFAULT_MISSIONS:
             self.db.add(Mission(
                 family_id=family.id, title=title, category=MissionCategory(cat),
                 points=pts, difficulty=MissionDifficulty(diff),
             ))
-        for title, pts in DEFAULT_PUNISHMENTS:
-            self.db.add(Punishment(family_id=family.id, title=title, points_deducted=pts))
-        for title, desc, cost in DEFAULT_REWARDS:
-            self.db.add(Reward(family_id=family.id, title=title, description=desc, points_cost=cost))
+        if family.rewards_enabled:
+            for title, pts in DEFAULT_PUNISHMENTS:
+                self.db.add(Punishment(family_id=family.id, title=title, points_deducted=pts))
+            for title, desc, cost in DEFAULT_REWARDS:
+                self.db.add(Reward(family_id=family.id, title=title, description=desc, points_cost=cost))
 
     async def _send_verification(self, parent_id: int, email: str) -> None:
         raw = generate_raw_token()

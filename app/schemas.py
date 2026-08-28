@@ -120,6 +120,9 @@ class FamilyPublic(BaseModel):
     quiz_enabled: bool = False
     chat_enabled: bool = False
     agenda_enabled: bool = False
+    rewards_enabled: bool = False
+    mission_evidence_enabled: bool = False
+    daily_mission_limit: Optional[int] = None
     is_active: bool = True
 
     model_config = {"from_attributes": True}
@@ -233,6 +236,9 @@ class PlatformFamilyPublic(BaseModel):
     quiz_enabled: bool
     chat_enabled: bool
     agenda_enabled: bool
+    rewards_enabled: bool
+    mission_evidence_enabled: bool
+    daily_mission_limit: Optional[int] = None
     is_active: bool
     children_count: int = 0
     created_at: datetime
@@ -244,6 +250,9 @@ class PlatformFamilyFeaturesUpdate(BaseModel):
     quiz_enabled: Optional[bool] = None
     chat_enabled: Optional[bool] = None
     agenda_enabled: Optional[bool] = None
+    rewards_enabled: Optional[bool] = None
+    mission_evidence_enabled: Optional[bool] = None
+    daily_mission_limit: Optional[int] = Field(default=None, ge=1, le=500)
     is_active: Optional[bool] = None
 
 
@@ -382,7 +391,7 @@ class PunishmentRecordCreate(BaseModel):
 class MissionCompleteRequest(BaseModel):
     mission_id: int
     note: Optional[str] = None
-    proof_image: str = Field(min_length=50)
+    proof_image: Optional[str] = None
 
 
 class ParentMissionRecordRequest(BaseModel):
@@ -566,6 +575,9 @@ class ChildHomeData(BaseModel):
     quiz_enabled: bool = False
     chat_enabled: bool = False
     chat_unread_count: int = 0
+    rewards_enabled: bool = False
+    mission_evidence_enabled: bool = False
+    daily_mission_limit: Optional[int] = None
 
 
 # Notifications

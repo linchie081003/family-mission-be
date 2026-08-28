@@ -6,6 +6,9 @@ FEATURE_LABELS = {
     "quiz": "Quiz",
     "chat": "Chat",
     "agenda": "Agenda Keluarga",
+    "reward": "Reward & Poin",
+    "mission_evidence": "Bukti Misi",
+    "tenant_active": "Tenant Aktif",
 }
 
 

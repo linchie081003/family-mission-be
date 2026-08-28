@@ -61,6 +61,9 @@ class FamilyRepository:
             referral_code=await self.generate_unique_referral_code(),
             is_active=is_active,
             referred_by_family_id=referred_by_family_id,
+            rewards_enabled=False,
+            mission_evidence_enabled=False,
+            daily_mission_limit=5,
         )
         self.db.add(family)
         await self.db.flush()

@@ -117,6 +117,10 @@ async def run_light_migrations() -> None:
         """,
         "DROP TYPE IF EXISTS parentrole",
         "DROP TYPE IF EXISTS emailtokenpurpose",
+        # --- Feature flags: reward, mission evidence, daily mission limit ---
+        "ALTER TABLE families ADD COLUMN IF NOT EXISTS rewards_enabled BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE families ADD COLUMN IF NOT EXISTS mission_evidence_enabled BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE families ADD COLUMN IF NOT EXISTS daily_mission_limit INTEGER",
     ]
     async with engine.begin() as conn:
         for stmt in statements:
@@ -142,4 +146,25 @@ async def run_light_migrations() -> None:
             UPDATE families
             SET referral_code = UPPER(SUBSTRING(MD5(RANDOM()::TEXT || id::TEXT) FROM 1 FOR 8))
             WHERE referral_code IS NULL
+        """))
+
+        # One-time-style backfill for pre-existing tenants (skip new basic registrations)
+        await conn.execute(text("""
+            UPDATE families f
+            SET rewards_enabled = TRUE,
+                mission_evidence_enabled = TRUE,
+                daily_mission_limit = NULL
+            WHERE f.rewards_enabled = FALSE
+              AND f.mission_evidence_enabled = FALSE
+              AND (
+                EXISTS (
+                    SELECT 1 FROM children c
+                    WHERE c.family_id = f.id AND c.lifetime_points > 0
+                )
+                OR EXISTS (
+                    SELECT 1 FROM mission_completions mc
+                    JOIN children c ON c.id = mc.child_id
+                    WHERE c.family_id = f.id AND mc.status = 'APPROVED'
+                )
+              )
         """))

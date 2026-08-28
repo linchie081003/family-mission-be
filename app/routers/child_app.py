@@ -34,7 +34,7 @@ from app.schemas import ChildHomeData, GoalCreate, GoalPublic, MissionPublic, Po
 from app.services.gamification import get_level_progress
 from app.services.calendar_service import build_calendar
 from app.services.chat_service import ChatService
-from app.services.feature_guard import assert_feature_enabled
+from app.services.feature_guard import assert_feature_enabled, assert_rewards_enabled
 from app.services.points import get_points_summary, get_redemption_breakdown, get_today_start, get_week_bounds, get_weekly_evaluations
 from app.services.quiz_service import QuizService
 
@@ -113,6 +113,9 @@ async def child_home(
         quiz_enabled=bool(family and family.quiz_enabled),
         chat_enabled=bool(family and family.chat_enabled),
         chat_unread_count=await ChatService(db).child_unread_count(child, family) if family and family.chat_enabled else 0,
+        rewards_enabled=bool(family and family.rewards_enabled),
+        mission_evidence_enabled=bool(family and family.mission_evidence_enabled),
+        daily_mission_limit=family.daily_mission_limit if family else None,
     )
 
 
@@ -166,6 +169,8 @@ async def child_rewards(
     child: Annotated[Child, Depends(get_current_child)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
+    family = await db.get(Family, child.family_id)
+    assert_rewards_enabled(family)
     result = await db.execute(
         select(Reward).where(Reward.family_id == child.family_id, Reward.is_active == True)
     )
@@ -177,6 +182,8 @@ async def child_redemptions(
     child: Annotated[Child, Depends(get_current_child)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
+    family = await db.get(Family, child.family_id)
+    assert_rewards_enabled(family)
     data = await get_redemption_breakdown(db, child.id)
     return RedemptionSummary(**data)
 
@@ -186,6 +193,8 @@ async def child_points_summary(
     child: Annotated[Child, Depends(get_current_child)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
+    family = await db.get(Family, child.family_id)
+    assert_rewards_enabled(family)
     return PointsSummary(**await get_points_summary(db, child))
 
 

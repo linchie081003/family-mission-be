@@ -45,6 +45,7 @@ from app.services.points import (
 )
 from app.services.notification_service import notify_child, notify_parent
 from app.services.audit_service import log_audit
+from app.services.feature_guard import assert_daily_mission_quota, assert_rewards_enabled
 from app.services.proof_image import validate_proof_image
 
 router = APIRouter(prefix="/actions", tags=["actions"])
@@ -70,16 +71,26 @@ async def _approve_mission_completion(
     completed_at = completed_at or completion.completed_at or datetime.now(timezone.utc)
     is_today = completed_at.date() == datetime.now(timezone.utc).date()
 
+    await assert_daily_mission_quota(db, family, child.id, on_date=completed_at.date())
+
+    completion.status = CompletionStatus.APPROVED
+    completion.reviewed_at = datetime.now(timezone.utc)
+    completion.completed_at = completed_at
+
+    if not family.rewards_enabled:
+        completion.points_awarded = 0
+        if is_today:
+            child.last_activity_date = datetime.now(timezone.utc)
+            child.reminder_sent_at = None
+        return 0
+
     points = mission.points
     if points > 0:
         daily = await get_daily_points_earned(db, child.id, on_date=completed_at.date())
         if daily + points > family.daily_point_limit:
             points = max(0, family.daily_point_limit - daily)
 
-    completion.status = CompletionStatus.APPROVED
     completion.points_awarded = points
-    completion.reviewed_at = datetime.now(timezone.utc)
-    completion.completed_at = completed_at
 
     if points > 0:
         await record_transaction(
@@ -135,13 +146,20 @@ async def child_complete_mission(
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Misi sudah dicatat hari ini")
 
-    proof_image = validate_proof_image(data.proof_image, required=True)
+    family = await db.get(Family, child_auth.family_id)
+    if not family:
+        raise HTTPException(status_code=404, detail="Keluarga tidak ditemukan")
+
+    proof_image = validate_proof_image(
+        data.proof_image,
+        required=family.mission_evidence_enabled,
+    )
 
     completion = MissionCompletion(
         child_id=child_id,
         mission_id=data.mission_id,
         status=CompletionStatus.PENDING,
-        points_awarded=mission.points,
+        points_awarded=mission.points if family.rewards_enabled else 0,
         note=data.note,
         proof_image=proof_image,
     )
@@ -218,7 +236,7 @@ async def parent_record_mission(
         child_id=child_id,
         mission_id=data.mission_id,
         status=CompletionStatus.PENDING,
-        points_awarded=mission.points,
+        points_awarded=mission.points if family.rewards_enabled else 0,
         note=data.note,
         proof_image=proof_image,
         completed_at=completed_at,
@@ -350,6 +368,7 @@ async def record_achievement(
     family: Annotated[Family, Depends(get_current_family)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
+    assert_rewards_enabled(family)
     child = await get_child_in_family(db, child_id, family.id)
     achievement = Achievement(child_id=child.id, title=data.title, points=data.points, note=data.note)
     db.add(achievement)
@@ -387,6 +406,7 @@ async def record_punishment(
     family: Annotated[Family, Depends(get_current_family)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
+    assert_rewards_enabled(family)
     child = await get_child_in_family(db, child_id, family.id)
     record = PunishmentRecord(
         child_id=child.id,
@@ -425,6 +445,7 @@ async def record_punishment(
 
 
 async def _create_redemption(db: AsyncSession, child: Child, fam: Family, data: RedemptionCreate):
+    assert_rewards_enabled(fam)
     spendable, _ = await get_spendable_balance(db, child)
     balance_limit = spendable if data.redemption_type == "reward" else child.active_balance
 
@@ -498,6 +519,7 @@ async def approve_redemption(
     family: Annotated[Family, Depends(get_current_family)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
+    assert_rewards_enabled(family)
     result = await db.execute(
         select(RedemptionRequest).options(selectinload(RedemptionRequest.child)).where(RedemptionRequest.id == redemption_id)
     )

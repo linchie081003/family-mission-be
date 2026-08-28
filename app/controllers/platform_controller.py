@@ -118,6 +118,9 @@ async def approve_family(
         "quiz_enabled": family.quiz_enabled,
         "chat_enabled": family.chat_enabled,
         "agenda_enabled": family.agenda_enabled,
+        "rewards_enabled": family.rewards_enabled,
+        "mission_evidence_enabled": family.mission_evidence_enabled,
+        "daily_mission_limit": family.daily_mission_limit,
         "is_active": family.is_active,
         "children_count": count or 0,
         "created_at": family.created_at,
@@ -140,7 +143,9 @@ async def update_family_features(
     admin: Annotated[PlatformAdmin, Depends(get_current_platform_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    return await PlatformService(db).update_features(admin, family_id, data)
+    family = await PlatformService(db).update_features(admin, family_id, data)
+    await db.commit()
+    return await PlatformService(db).family_public_item(family)
 
 
 @router.get("/audit", response_model=list[PlatformAuditLogPublic])
