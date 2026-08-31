@@ -86,12 +86,7 @@ async def registered_parent(client: AsyncClient, platform_admin_headers: dict):
     res = await client.post("/api/auth/register", json=payload)
     assert res.status_code == 200, res.text
     data = res.json()
-    enable = await client.post(
-        f"/api/platform/families/{data['family_id']}/activate",
-        headers=platform_admin_headers,
-        json={"preset": "family"},
-    )
-    assert enable.status_code == 200, enable.text
+    # Register + TESTING=1 auto-verify + family trial preset (quiz enabled)
     login = await client.post(
         "/api/auth/login",
         json={"email": payload["email"], "password": TEST_PASSWORD},

@@ -18,12 +18,6 @@ async def test_billing_lifecycle_flow(client: AsyncClient, platform_admin_header
     assert reg.status_code == 200, reg.text
     family_id = reg.json()["family_id"]
 
-    manual = await client.post(
-        f"/api/platform/families/{family_id}/verify-email",
-        headers=platform_admin_headers,
-    )
-    assert manual.status_code == 200, manual.text
-
     login = await client.post(
         "/api/auth/login",
         json={"email": payload["email"], "password": TEST_PASSWORD},
@@ -92,15 +86,11 @@ async def test_upgrade_requires_proof(client: AsyncClient, platform_admin_header
     payload = _register_payload(uid)
     reg = await client.post("/api/auth/register", json=payload)
     assert reg.status_code == 200
-    family_id = reg.json()["family_id"]
-    await client.post(
-        f"/api/platform/families/{family_id}/verify-email",
-        headers=platform_admin_headers,
-    )
     login = await client.post(
         "/api/auth/login",
         json={"email": payload["email"], "password": TEST_PASSWORD},
     )
+    assert login.status_code == 200, login.text
     parent_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
 
     await client.patch(
@@ -127,10 +117,6 @@ async def test_demo_plan_assign_and_revoke(client: AsyncClient, platform_admin_h
     reg = await client.post("/api/auth/register", json=payload)
     assert reg.status_code == 200
     family_id = reg.json()["family_id"]
-    await client.post(
-        f"/api/platform/families/{family_id}/verify-email",
-        headers=platform_admin_headers,
-    )
 
     assign = await client.post(
         f"/api/platform/families/{family_id}/assign-plan",

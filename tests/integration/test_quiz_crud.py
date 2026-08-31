@@ -139,5 +139,13 @@ async def test_quiz_crud_flow(
     )
     assert toggle.status_code == 200
 
+    # registered_parent starts on family trial (quiz_enabled=True); disable to test guard
+    disable_quiz = await client.patch(
+        f"/api/platform/families/{registered_parent['family_id']}/features",
+        headers=platform_admin_headers,
+        json={"quiz_enabled": False},
+    )
+    assert disable_quiz.status_code == 200, disable_quiz.text
+
     blocked = await client.get("/api/quizzes", headers=registered_parent["headers"])
     assert blocked.status_code == 403
