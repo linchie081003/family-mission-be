@@ -664,6 +664,7 @@ class Subscription(Base):
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     cancel_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     manual_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_demo: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -686,6 +687,12 @@ class Payment(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     payment_metadata: Mapped[dict | None] = mapped_column("metadata", JSON, nullable=True)
+    proof_image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    verified_by_admin_id: Mapped[int | None] = mapped_column(
+        ForeignKey("platform_admins.id"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
 
     family: Mapped["Family"] = relationship()
@@ -705,6 +712,20 @@ class PlatformBroadcast(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
 
     platform_admin: Mapped["PlatformAdmin"] = relationship()
+
+
+class PlatformPaymentSettings(Base):
+    __tablename__ = "platform_payment_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    qris_image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    qris_merchant_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    bank_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    bank_account_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    bank_account_holder: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    transfer_instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payment_methods_enabled: Mapped[dict] = mapped_column(JSON, default=lambda: {"qris_static": True, "bank_transfer": True})
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
 class ChatMessage(Base):

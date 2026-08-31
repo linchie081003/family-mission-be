@@ -2,7 +2,7 @@
 
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_platform_admin
@@ -13,6 +13,9 @@ from app.schemas import (
     BillingStatsPublic,
     ManualPaymentCreate,
     PaymentListResponse,
+    PaymentRejectRequest,
+    PaymentSettingsPublic,
+    PaymentSettingsUpdate,
     PlanCreate,
     PlanPublic,
     PlanUpdate,
@@ -23,6 +26,7 @@ from app.schemas import (
     PlatformBroadcastCreate,
     PlatformBroadcastPublic,
     PlatformFamilyActivate,
+    PlatformFamilyAssignPlan,
     PlatformFamilyFeaturesUpdate,
     PlatformFamilyListResponse,
     PlatformFamilyPublic,
@@ -41,6 +45,7 @@ from app.services.platform_billing_service import PlatformBillingService
 from app.services.platform_notification_service import PlatformNotificationService
 from app.services.platform_referral_service import PlatformReferralService
 from app.services.platform_service import PlatformService
+from fastapi import File, UploadFile
 
 router = APIRouter(prefix="/platform", tags=["platform"])
 
@@ -154,6 +159,33 @@ async def activate_family(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     family = await PlatformService(db).activate_family(admin, family_id, data.preset)
+    await db.commit()
+    return await PlatformService(db).family_public_item(family)
+
+
+@router.post("/families/{family_id}/assign-plan", response_model=PlatformFamilyPublic)
+async def assign_family_plan(
+    family_id: int,
+    data: PlatformFamilyAssignPlan,
+    admin: Annotated[PlatformAdmin, Depends(get_current_platform_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    if not data.is_demo:
+        raise HTTPException(status_code=400, detail="Endpoint ini khusus assign paket demo")
+    family = await PlatformService(db).assign_demo_plan(
+        admin, family_id, data.plan_slug, note=data.note
+    )
+    await db.commit()
+    return await PlatformService(db).family_public_item(family)
+
+
+@router.post("/families/{family_id}/revoke-demo", response_model=PlatformFamilyPublic)
+async def revoke_family_demo(
+    family_id: int,
+    admin: Annotated[PlatformAdmin, Depends(get_current_platform_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    family = await PlatformService(db).revoke_demo(admin, family_id)
     await db.commit()
     return await PlatformService(db).family_public_item(family)
 
@@ -458,10 +490,81 @@ async def create_manual_payment(
     admin: Annotated[PlatformAdmin, Depends(get_current_platform_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    del admin
-    payment = await PlatformBillingService(db).create_manual_payment(data.model_dump())
+    payment = await PlatformBillingService(db).create_manual_payment(
+        data.model_dump(), admin_id=admin.id
+    )
     await db.commit()
-    return {"id": payment.id, "status": payment.status}
+    return {"id": payment.id, "status": payment.status, "subscription_id": payment.subscription_id}
+
+
+@router.get("/payments/pending-count")
+async def pending_payment_count(
+    admin: Annotated[PlatformAdmin, Depends(get_current_platform_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    del admin
+    count = await PlatformBillingService(db).pending_payment_count()
+    return {"count": count}
+
+
+@router.post("/payments/{payment_id}/confirm")
+async def confirm_payment(
+    payment_id: int,
+    admin: Annotated[PlatformAdmin, Depends(get_current_platform_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    payment = await PlatformBillingService(db).confirm_payment(payment_id, admin.id)
+    await db.commit()
+    return {"id": payment.id, "status": payment.status, "subscription_id": payment.subscription_id}
+
+
+@router.post("/payments/{payment_id}/reject")
+async def reject_payment(
+    payment_id: int,
+    data: PaymentRejectRequest,
+    admin: Annotated[PlatformAdmin, Depends(get_current_platform_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    payment = await PlatformBillingService(db).reject_payment(payment_id, admin.id, data.reason)
+    await db.commit()
+    return {"id": payment.id, "status": payment.status, "rejection_reason": payment.rejection_reason}
+
+
+@router.get("/billing/payment-settings", response_model=PaymentSettingsPublic)
+async def get_payment_settings(
+    admin: Annotated[PlatformAdmin, Depends(get_current_platform_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    del admin
+    data = await PlatformBillingService(db).get_payment_settings()
+    return PaymentSettingsPublic(**data)
+
+
+@router.patch("/billing/payment-settings", response_model=PaymentSettingsPublic)
+async def update_payment_settings(
+    data: PaymentSettingsUpdate,
+    admin: Annotated[PlatformAdmin, Depends(get_current_platform_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    del admin
+    updated = await PlatformBillingService(db).update_payment_settings(data.model_dump(exclude_unset=True))
+    await db.commit()
+    return PaymentSettingsPublic(**updated)
+
+
+@router.post("/billing/payment-settings/qris-upload")
+async def upload_qris_image(
+    admin: Annotated[PlatformAdmin, Depends(get_current_platform_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    file: UploadFile = File(...),
+):
+    del admin
+    content = await file.read()
+    url = await PlatformBillingService(db).save_qris_image(
+        content, file.content_type, file.filename or "qris.png"
+    )
+    await db.commit()
+    return {"qris_image_url": url}
 
 
 @router.get("/trials", response_model=TrialListResponse)

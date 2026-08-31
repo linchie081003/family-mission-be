@@ -247,8 +247,19 @@ class PlatformFamilyPublic(BaseModel):
     email_verified: bool = False
     referral_code: Optional[str] = None
     referrer_name: Optional[str] = None
+    plan_slug: Optional[str] = None
+    plan_name: Optional[str] = None
+    subscription_status: Optional[str] = None
+    is_demo: bool = False
+    current_period_end: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
+
+
+class PlatformFamilyAssignPlan(BaseModel):
+    plan_slug: Literal["basic", "standard", "family"]
+    is_demo: bool = True
+    note: Optional[str] = Field(default=None, max_length=500)
 
 
 class PlatformFamilyListResponse(BaseModel):
@@ -385,6 +396,14 @@ class PaymentPublic(BaseModel):
     description: Optional[str] = None
     paid_at: Optional[datetime] = None
     created_at: datetime
+    plan_slug: Optional[str] = None
+    subscription_id: Optional[int] = None
+    proof_image_url: Optional[str] = None
+    rejection_reason: Optional[str] = None
+
+
+class PaymentRejectRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=500)
 
 
 class PaymentListResponse(BaseModel):
@@ -398,10 +417,91 @@ class ManualPaymentCreate(BaseModel):
     family_id: int
     amount: int = Field(gt=0)
     currency: str = "IDR"
+    plan_id: int
+    billing_period: Literal["monthly", "yearly"] = "monthly"
+    pending_payment_id: Optional[int] = None
     subscription_id: Optional[int] = None
+    provider: Optional[str] = "manual"
     provider_ref: Optional[str] = None
     invoice_number: Optional[str] = None
     description: Optional[str] = None
+
+
+class PaymentSettingsPublic(BaseModel):
+    qris_image_url: Optional[str] = None
+    qris_merchant_name: Optional[str] = None
+    bank_name: Optional[str] = None
+    bank_account_number: Optional[str] = None
+    bank_account_holder: Optional[str] = None
+    transfer_instructions: Optional[str] = None
+    payment_methods_enabled: dict = Field(default_factory=lambda: {"qris_static": True, "bank_transfer": True})
+    updated_at: Optional[datetime] = None
+
+
+class PaymentSettingsUpdate(BaseModel):
+    qris_image_url: Optional[str] = None
+    qris_merchant_name: Optional[str] = None
+    bank_name: Optional[str] = None
+    bank_account_number: Optional[str] = None
+    bank_account_holder: Optional[str] = None
+    transfer_instructions: Optional[str] = None
+    payment_methods_enabled: Optional[dict] = None
+
+
+class BillingPlanPublic(BaseModel):
+    id: int
+    slug: str
+    name: str
+    description: Optional[str] = None
+    price_monthly: int
+    price_yearly: int
+    currency: str
+    feature_preset: dict
+    sort_order: int
+
+    model_config = {"from_attributes": True}
+
+
+class BillingSubscriptionPublic(BaseModel):
+    has_subscription: bool
+    status: Optional[str] = None
+    plan_slug: str
+    plan_name: str
+    trial_ends_at: Optional[datetime] = None
+    days_remaining: Optional[int] = None
+    current_period_end: Optional[datetime] = None
+    can_upgrade: bool = True
+    is_demo: bool = False
+    pending_payment: Optional[dict] = None
+
+
+class PendingPaymentPublic(BaseModel):
+    payment_id: int
+    plan_slug: Optional[str] = None
+    plan_name: Optional[str] = None
+    amount: int
+    status: str
+    created_at: datetime
+    has_proof: bool
+    rejection_reason: Optional[str] = None
+
+
+class UpgradeRequestCreate(BaseModel):
+    plan_slug: str = Field(min_length=1, max_length=50)
+    method: Literal["qris_static", "bank_transfer"]
+    proof_image: str = Field(min_length=1)
+    provider_ref: Optional[str] = None
+    note: Optional[str] = None
+
+
+class UpgradeRequestResponse(BaseModel):
+    payment_id: int
+    amount: int
+    currency: str
+    plan_slug: str
+    plan_name: str
+    method: str
+    instructions: PaymentSettingsPublic
 
 
 class TrialEntryPublic(BaseModel):

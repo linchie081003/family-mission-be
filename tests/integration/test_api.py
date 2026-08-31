@@ -1,5 +1,9 @@
+import uuid
+
 import pytest
 from httpx import AsyncClient
+
+from tests.conftest import TEST_PASSWORD, _register_payload
 
 
 @pytest.mark.asyncio
@@ -11,23 +15,11 @@ async def test_health(client: AsyncClient):
     assert data["architecture"] == "mvc"
 
 
-TEST_REGISTER = {
-    "email": "integration@example.com",
-    "password": "Secret123!",
-    "confirm_password": "Secret123!",
-    "family_name": "Integration Test",
-    "name": "Test Parent",
-    "role": "father",
-    "accept_terms": True,
-    "accept_privacy": True,
-    "accept_parental_consent": True,
-    "accept_child_data_protection": True,
-}
-
-
 @pytest.mark.asyncio
 async def test_parent_register_and_login(client: AsyncClient):
-    register = await client.post("/api/auth/register", json=TEST_REGISTER)
+    uid = uuid.uuid4().hex[:8]
+    payload = _register_payload(uid)
+    register = await client.post("/api/auth/register", json=payload)
     assert register.status_code == 200
     reg_data = register.json()
     assert reg_data["status"] == "pending_verification"
@@ -35,14 +27,14 @@ async def test_parent_register_and_login(client: AsyncClient):
 
     login = await client.post(
         "/api/auth/login",
-        json={"email": TEST_REGISTER["email"], "password": TEST_REGISTER["password"]},
+        json={"email": payload["email"], "password": TEST_PASSWORD},
     )
     assert login.status_code == 200
     assert login.json()["role"] == "parent"
 
     bad_login = await client.post(
         "/api/auth/login",
-        json={"email": TEST_REGISTER["email"], "password": "WrongPass1!"},
+        json={"email": payload["email"], "password": "WrongPass1!"},
     )
     assert bad_login.status_code == 401
 
@@ -76,7 +68,8 @@ async def test_parent_settings_flow(client: AsyncClient, registered_parent: dict
 
 
 @pytest.mark.asyncio
-async def test_platform_admin_login(client: AsyncClient):
+async def test_platform_admin_login(client: AsyncClient, platform_admin_headers: dict):
+    del platform_admin_headers
     res = await client.post(
         "/api/platform/auth/login",
         json={"email": "admin@familymission.local", "password": "admin123456"},

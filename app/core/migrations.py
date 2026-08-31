@@ -1,85 +1,77 @@
 import json
-import time
 
 from sqlalchemy import text
 
 from app.core.database import engine
-
-# #region agent log
-_DEBUG_LOG_PATH = r"D:\Lesy\Personal\family project\family app\debug-b984bf.log"
-
-
-def _debug_log(hypothesis_id: str, location: str, message: str, data: dict | None = None) -> None:
-    try:
-        import os
-
-        payload = {
-            "sessionId": "b984bf",
-            "hypothesisId": hypothesis_id,
-            "location": location,
-            "message": message,
-            "data": data or {},
-            "timestamp": int(time.time() * 1000),
-        }
-        with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
-            f.write(json.dumps(payload) + "\n")
-    except OSError:
-        pass
-
-
-# #endregion
+from app.services.plan_presets import BASIC_PRESET, FAMILY_PRESET, STANDARD_PRESET
 
 _DEFAULT_PLANS = (
     {
-        "slug": "standard",
-        "name": "Standar",
-        "description": "Paket dasar — misi checklist tanpa reward premium",
+        "slug": "basic",
+        "name": "Basic",
+        "description": "Misi & poin dasar — gratis",
         "price_monthly": 0,
         "price_yearly": 0,
         "currency": "IDR",
-        "trial_days": 14,
+        "trial_days": 0,
+        "sort_order": 0,
+        "feature_preset": BASIC_PRESET,
+    },
+    {
+        "slug": "standard",
+        "name": "Standard",
+        "description": "Misi tanpa batas, bukti foto, quiz edukasi",
+        "price_monthly": 29000,
+        "price_yearly": 290000,
+        "currency": "IDR",
+        "trial_days": 0,
         "sort_order": 1,
-        "feature_preset": {
-            "rewards_enabled": False,
-            "mission_evidence_enabled": False,
-            "quiz_enabled": False,
-            "chat_enabled": False,
-            "agenda_enabled": False,
-            "daily_mission_limit": 5,
-        },
+        "feature_preset": STANDARD_PRESET,
     },
     {
         "slug": "family",
         "name": "Family",
-        "description": "Paket lengkap — semua fitur aktif",
-        "price_monthly": 99000,
-        "price_yearly": 990000,
+        "description": "Semua fitur Standard + chat keluarga + agenda",
+        "price_monthly": 49000,
+        "price_yearly": 490000,
         "currency": "IDR",
-        "trial_days": 14,
+        "trial_days": 10,
         "sort_order": 2,
-        "feature_preset": {
-            "rewards_enabled": True,
-            "mission_evidence_enabled": True,
-            "quiz_enabled": True,
-            "chat_enabled": True,
-            "agenda_enabled": True,
-            "daily_mission_limit": None,
-        },
+        "feature_preset": FAMILY_PRESET,
     },
 )
 
 
 async def _seed_default_plans(conn) -> None:
-    """Seed plan catalog via bind params — avoids SQLAlchemy text() parsing :false/:null in JSON."""
-    # #region agent log
-    _debug_log("H1", "migrations.py:_seed_default_plans", "seed_start", {})
-    # #endregion
+    """Seed or sync plan catalog via bind params."""
     for plan in _DEFAULT_PLANS:
         exists = await conn.execute(
-            text("SELECT 1 FROM plans WHERE slug = :slug LIMIT 1"),
+            text("SELECT id FROM plans WHERE slug = :slug LIMIT 1"),
             {"slug": plan["slug"]},
         )
-        if exists.first():
+        row = exists.first()
+        preset_json = json.dumps(plan["feature_preset"])
+        if row:
+            await conn.execute(
+                text("""
+                    UPDATE plans SET
+                        name = :name, description = :description,
+                        price_monthly = :price_monthly, price_yearly = :price_yearly,
+                        trial_days = :trial_days, feature_preset = CAST(:feature_preset AS jsonb),
+                        sort_order = :sort_order, updated_at = NOW()
+                    WHERE slug = :slug
+                """),
+                {
+                    "slug": plan["slug"],
+                    "name": plan["name"],
+                    "description": plan["description"],
+                    "price_monthly": plan["price_monthly"],
+                    "price_yearly": plan["price_yearly"],
+                    "trial_days": plan["trial_days"],
+                    "feature_preset": preset_json,
+                    "sort_order": plan["sort_order"],
+                },
+            )
             continue
         await conn.execute(
             text("""
@@ -93,12 +85,9 @@ async def _seed_default_plans(conn) -> None:
             """),
             {
                 **{k: plan[k] for k in ("slug", "name", "description", "price_monthly", "price_yearly", "currency", "trial_days", "sort_order")},
-                "feature_preset": json.dumps(plan["feature_preset"]),
+                "feature_preset": preset_json,
             },
         )
-        # #region agent log
-        _debug_log("H1", "migrations.py:_seed_default_plans", "seeded_plan", {"slug": plan["slug"]})
-        # #endregion
 
 
 async def run_light_migrations() -> None:
@@ -283,6 +272,30 @@ async def run_light_migrations() -> None:
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
         """,
+        """
+        CREATE TABLE IF NOT EXISTS platform_payment_settings (
+            id SERIAL PRIMARY KEY,
+            qris_image_url VARCHAR(500),
+            qris_merchant_name VARCHAR(200),
+            bank_name VARCHAR(100),
+            bank_account_number VARCHAR(50),
+            bank_account_holder VARCHAR(100),
+            transfer_instructions TEXT,
+            payment_methods_enabled JSONB NOT NULL DEFAULT '{"qris_static": true, "bank_transfer": true}',
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+        "INSERT INTO platform_payment_settings (id) SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM platform_payment_settings WHERE id = 1)",
+        "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS is_demo BOOLEAN NOT NULL DEFAULT FALSE",
+        "CREATE INDEX IF NOT EXISTS ix_subscriptions_is_demo ON subscriptions (is_demo)",
+        "ALTER TABLE payments ADD COLUMN IF NOT EXISTS proof_image_url VARCHAR(500)",
+        "ALTER TABLE payments ADD COLUMN IF NOT EXISTS rejection_reason TEXT",
+        "ALTER TABLE payments ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ",
+        """
+        ALTER TABLE payments
+        ADD COLUMN IF NOT EXISTS verified_by_admin_id INTEGER
+        REFERENCES platform_admins(id)
+        """,
     ]
     async with engine.begin() as conn:
         for stmt in statements:
@@ -345,6 +358,3 @@ async def run_light_migrations() -> None:
         """))
 
         await _seed_default_plans(conn)
-        # #region agent log
-        _debug_log("H1", "migrations.py:run_light_migrations", "migrations_complete", {})
-        # #endregion

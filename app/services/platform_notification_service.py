@@ -1,34 +1,10 @@
-import json
-import time
-from pathlib import Path
-
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.models import Family, NotificationType, Parent, PlatformAdmin, PlatformBroadcast, PlatformAuditLog, PlatformNotification
+from app.models.models import Family, NotificationType, Parent, Payment, Plan, PlatformAdmin, PlatformBroadcast, PlatformAuditLog, PlatformNotification
 from app.services.email_service import send_email
 from app.services.notification_service import notify_parent
-
-_DEBUG_LOG = Path(__file__).resolve().parents[4] / "debug-b984bf.log"
-
-
-def _debug_log(*, hypothesis_id: str, location: str, message: str, data: dict, run_id: str = "pre-fix") -> None:
-    # #region agent log
-    try:
-        payload = {
-            "sessionId": "b984bf",
-            "runId": run_id,
-            "hypothesisId": hypothesis_id,
-            "location": location,
-            "message": message,
-            "data": data,
-            "timestamp": int(time.time() * 1000),
-        }
-        with _DEBUG_LOG.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(payload) + "\n")
-    except OSError:
-        pass
-    # #endregion
+from app.core.config import settings
 
 
 class PlatformNotificationService:
@@ -62,6 +38,48 @@ class PlatformNotificationService:
                     f"Email: {family.email}\n"
                     f"Kode: {family.family_code}\n\n"
                     f"Login Super Admin untuk menyetujui tenant."
+                ),
+            )
+        return notif
+
+    async def notify_payment_proof_uploaded(
+        self,
+        family: Family,
+        payment: Payment,
+        plan: Plan,
+    ) -> PlatformNotification:
+        amount_fmt = f"Rp{payment.amount:,}".replace(",", ".")
+        notif = PlatformNotification(
+            type="payment_proof_uploaded",
+            title="Bukti pembayaran baru",
+            body=f"{family.family_name} mengupload bukti upgrade ke {plan.name} — {amount_fmt}",
+            family_id=family.id,
+            data={
+                "payment_id": payment.id,
+                "plan_slug": plan.slug,
+                "amount": payment.amount,
+                "proof_image_url": payment.proof_image_url,
+                "action_path": "/admin/billing/verification",
+            },
+        )
+        self.db.add(notif)
+        await self.db.flush()
+
+        admin = await self.db.scalar(select(PlatformAdmin).order_by(PlatformAdmin.id).limit(1))
+        if admin:
+            recipient = admin.notification_email or admin.email
+            verify_url = f"{settings.frontend_base_url}/admin/billing/verification?payment_id={payment.id}"
+            await send_email(
+                to=recipient,
+                subject=f"[Family Mission] Bukti pembayaran: {family.family_name}",
+                body=(
+                    f"Keluarga mengupload bukti pembayaran upgrade.\n\n"
+                    f"Nama: {family.family_name}\n"
+                    f"Email: {family.email}\n"
+                    f"Paket: {plan.name}\n"
+                    f"Jumlah: {amount_fmt}\n"
+                    f"Metode: {payment.provider}\n\n"
+                    f"Verifikasi di: {verify_url}"
                 ),
             )
         return notif
@@ -100,18 +118,9 @@ class PlatformNotificationService:
         body: str,
         also_send_email: bool = False,
     ) -> PlatformBroadcast:
-        # #region agent log
-        _debug_log(
-            hypothesis_id="H1",
-            location="platform_notification_service.py:broadcast_to_families:entry",
-            message="broadcast entry",
-            data={"also_send_email": also_send_email, "send_email_callable": callable(send_email)},
-        )
-        # #endregion
         result = await self.db.execute(select(Family).where(Family.is_active.is_(True)))
         families = list(result.scalars().all())
         reached = 0
-        emails_attempted = 0
         for family in families:
             await notify_parent(
                 self.db,
@@ -127,20 +136,11 @@ class PlatformNotificationService:
                     select(Parent).where(Parent.family_id == family.id, Parent.is_primary.is_(True))
                 )
                 if parent:
-                    emails_attempted += 1
-                    sent = await send_email(
+                    await send_email(
                         to=parent.email,
                         subject=f"[Family Mission] {title}",
                         body=body,
                     )
-                    # #region agent log
-                    _debug_log(
-                        hypothesis_id="H1",
-                        location="platform_notification_service.py:broadcast_to_families:email",
-                        message="email dispatch result",
-                        data={"family_id": family.id, "sent": sent},
-                    )
-                    # #endregion
 
         record = PlatformBroadcast(
             platform_admin_id=admin.id,
@@ -162,14 +162,6 @@ class PlatformNotificationService:
             )
             self.db.add(entry)
         await self.db.flush()
-        # #region agent log
-        _debug_log(
-            hypothesis_id="H1",
-            location="platform_notification_service.py:broadcast_to_families:exit",
-            message="broadcast complete",
-            data={"reached": reached, "emails_attempted": emails_attempted},
-        )
-        # #endregion
         return record
 
     async def list_broadcasts(self, limit: int = 20) -> list[PlatformBroadcast]:

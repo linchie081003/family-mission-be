@@ -124,6 +124,9 @@ class AuthService:
         from app.services.platform_notification_service import PlatformNotificationService
 
         await PlatformNotificationService(self.db).notify_family_registration(family)
+        from app.services.subscription_service import SubscriptionService
+
+        await SubscriptionService(self.db).start_trial(family, plan_slug="family", days=10)
         if referred_by_id and data.referral_code:
             from app.models.models import ReferralInvite
             invite_result = await self.db.execute(
@@ -158,6 +161,10 @@ class AuthService:
         family = await self.families.get_by_id(parent.family_id)
         if not family or not family.is_active:
             raise HTTPException(status_code=403, detail="Akun keluarga dinonaktifkan.")
+
+        from app.services.subscription_service import SubscriptionService
+
+        await SubscriptionService(self.db).check_and_expire_trials(family.id)
 
         token = create_access_token({
             "parent_id": parent.id,

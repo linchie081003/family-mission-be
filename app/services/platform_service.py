@@ -12,7 +12,7 @@ from app.models.models import EmailTokenPurpose, Family, Parent, PlatformAdmin, 
 from app.repositories.email_token_repository import EmailTokenRepository
 from app.repositories.platform_repository import PlatformRepository
 from app.schemas import PlatformAdminLogin, PlatformAdminProfileUpdate, PlatformFamilyFeaturesUpdate, TokenResponse
-from app.services.activation_presets import PRESET_LABELS, ActivationPresetKey, get_preset
+from app.services.activation_presets import PRESET_LABELS, ActivationPresetKey
 from app.services.auth_service import send_verification_for_parent
 from app.services.email_service import send_tenant_activation_email
 from app.services.platform_audit_service import FEATURE_LABELS, log_platform_feature_change
@@ -74,6 +74,25 @@ class PlatformService:
         )
         email_verified = bool(primary and primary.email_verified)
 
+        from app.models.models import Plan, Subscription
+
+        plan_slug = None
+        plan_name = None
+        subscription_status = None
+        is_demo = False
+        current_period_end = None
+        sub = await self.db.scalar(
+            select(Subscription).where(Subscription.family_id == family.id)
+        )
+        if sub:
+            subscription_status = sub.status
+            is_demo = bool(sub.is_demo)
+            current_period_end = sub.current_period_end
+            plan = await self.db.get(Plan, sub.plan_id)
+            if plan:
+                plan_slug = plan.slug
+                plan_name = plan.name
+
         return {
             "id": family.id,
             "email": family.email,
@@ -93,6 +112,11 @@ class PlatformService:
             "email_verified": email_verified,
             "referral_code": family.referral_code,
             "referrer_name": referrer_name,
+            "plan_slug": plan_slug,
+            "plan_name": plan_name,
+            "subscription_status": subscription_status,
+            "is_demo": is_demo,
+            "current_period_end": current_period_end,
         }
 
     async def _get_primary_parent(self, family_id: int) -> Parent | None:
@@ -163,15 +187,15 @@ class PlatformService:
         family_id: int,
         preset: ActivationPresetKey,
     ) -> Family:
+        from app.services.subscription_service import SubscriptionService
+
         family = await self.db.get(Family, family_id)
         if not family:
             raise HTTPException(status_code=404, detail="Keluarga tidak ditemukan")
 
-        features = get_preset(preset)
-        for field, value in features.items():
-            setattr(family, field, value)
-        family.activated_at = utcnow()
-        family.activation_preset = preset
+        sub_svc = SubscriptionService(self.db)
+        plan = await sub_svc.get_plan_by_slug(preset)
+        await sub_svc.activate_from_payment(family, plan, period_days=30)
 
         label = PRESET_LABELS[preset]
         primary = await self._get_primary_parent(family.id)
@@ -193,9 +217,60 @@ class PlatformService:
             details={
                 "family_name": family.family_name,
                 "preset": preset,
-                "features": features,
+                "features": plan.feature_preset,
                 "welcome_email_sent": welcome_email_sent,
             },
+        )
+        self.db.add(entry)
+        await self.db.flush()
+        return family
+
+    async def assign_demo_plan(
+        self,
+        admin: PlatformAdmin,
+        family_id: int,
+        plan_slug: str,
+        *,
+        note: str | None = None,
+    ) -> Family:
+        from app.services.subscription_service import SubscriptionService
+
+        family = await self.db.get(Family, family_id)
+        if not family:
+            raise HTTPException(status_code=404, detail="Keluarga tidak ditemukan")
+
+        sub_svc = SubscriptionService(self.db)
+        await sub_svc.assign_demo_plan(family, plan_slug, note=note)
+
+        entry = PlatformAuditLog(
+            platform_admin_id=admin.id,
+            family_id=family.id,
+            feature_key="demo_plan_assign",
+            enabled=True,
+            summary=f"Super Admin set demo paket {plan_slug} untuk {family.family_name}",
+            details={"plan_slug": plan_slug, "note": note},
+        )
+        self.db.add(entry)
+        await self.db.flush()
+        return family
+
+    async def revoke_demo(self, admin: PlatformAdmin, family_id: int) -> Family:
+        from app.services.subscription_service import SubscriptionService
+
+        family = await self.db.get(Family, family_id)
+        if not family:
+            raise HTTPException(status_code=404, detail="Keluarga tidak ditemukan")
+
+        sub_svc = SubscriptionService(self.db)
+        await sub_svc.revoke_demo(family)
+
+        entry = PlatformAuditLog(
+            platform_admin_id=admin.id,
+            family_id=family.id,
+            feature_key="demo_plan_revoke",
+            enabled=False,
+            summary=f"Super Admin cabut demo untuk {family.family_name}",
+            details={},
         )
         self.db.add(entry)
         await self.db.flush()

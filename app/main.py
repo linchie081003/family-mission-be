@@ -20,7 +20,7 @@ from app.core.config import settings
 
 from app.core.database import Base, async_session, engine
 
-from app.controllers import auth_controller, legal_controller, parent_controller, referral_controller
+from app.controllers import auth_controller, billing_controller, legal_controller, parent_controller, referral_controller
 from app.middleware.exception_handlers import unhandled_exception_handler
 from app.middleware.request_id import GlobalRateLimitMiddleware, RequestIdMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
@@ -44,12 +44,14 @@ from app.routers import (
     agenda,
     audit,
     auth,
+    billing,
     catalog,
     chat,
     child_app,
     child_auth,
     children,
     dashboard,
+    billing,
     missions,
     notifications,
     platform,
@@ -113,15 +115,6 @@ async def lifespan(app: FastAPI):
     await run_light_migrations()
 
     await seed_platform_admin()
-    # #region agent log
-    import json
-    import time
-    try:
-        with open(r"D:\Lesy\Personal\family project\family app\debug-b984bf.log", "a", encoding="utf-8") as _f:
-            _f.write(json.dumps({"sessionId": "b984bf", "hypothesisId": "H2", "location": "main.py:lifespan", "message": "seed_platform_admin_ok", "timestamp": int(time.time() * 1000)}) + "\n")
-    except OSError:
-        pass
-    # #endregion
     async with async_session() as db:
         await seed_default_templates(db)
         await db.commit()
@@ -171,6 +164,7 @@ app.add_middleware(
 
 app.include_router(auth.router, prefix="/api")
 app.include_router(parent_controller.router, prefix="/api")
+app.include_router(billing.router, prefix="/api")
 app.include_router(referral_controller.router, prefix="/api")
 app.include_router(legal_controller.router, prefix="/api")
 

@@ -35,6 +35,12 @@ class Settings(BaseSettings):
     redis_url: str = ""
     sentry_dsn: str = ""
 
+    payment_qris_image_url: str = ""
+    payment_bank_name: str = ""
+    payment_bank_account: str = ""
+    payment_bank_holder: str = ""
+    payment_instructions_text: str = ""
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
