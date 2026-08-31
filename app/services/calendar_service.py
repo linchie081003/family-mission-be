@@ -20,9 +20,6 @@ def parse_month(month: str) -> tuple[date, date]:
     return date(year, mon, 1), date(year, mon, last_day)
 
 
-from app.services.calendar_debug import calendar_debug_log
-
-
 async def build_calendar(
     db: AsyncSession,
     family_id: int,
@@ -108,24 +105,7 @@ async def build_calendar(
             "child_id": item.child_id,
         })
 
-    for date_key, day in days.items():
-        if day["net_points"] != 0:
-            mission_approved = sum(
-                m["points"] for m in day["missions"] if m["status"] == "approved"
-            )
-            other = [e for e in day["point_entries"] if e["type"] != "mission"]
-            calendar_debug_log(
-                location="calendar_service.py:build_calendar",
-                message="day point breakdown",
-                data={
-                    "date": date_key,
-                    "net_points": day["net_points"],
-                    "mission_approved_sum": mission_approved,
-                    "other_entry_count": len(other),
-                    "other_entries": other,
-                },
-            )
-
+    
     return {"month": month, "child_id": child_id, "days": days}
 
 
