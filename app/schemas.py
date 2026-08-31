@@ -252,6 +252,8 @@ class PlatformFamilyPublic(BaseModel):
     subscription_status: Optional[str] = None
     is_demo: bool = False
     current_period_end: Optional[datetime] = None
+    trial_ends_at: Optional[datetime] = None
+    days_remaining: Optional[int] = None
 
     model_config = {"from_attributes": True}
 

@@ -142,7 +142,10 @@ class PlatformBillingService:
     async def _get_payment_settings_row(self) -> PlatformPaymentSettings:
         row = await self.db.get(PlatformPaymentSettings, 1)
         if not row:
-            row = PlatformPaymentSettings(id=1)
+            row = PlatformPaymentSettings(
+                id=1,
+                payment_methods_enabled={"qris_static": True, "bank_transfer": True},
+            )
             self.db.add(row)
             await self.db.flush()
         return row

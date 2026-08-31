@@ -76,11 +76,18 @@ class PlatformService:
 
         from app.models.models import Plan, Subscription
 
+        from app.services.subscription_service import SubscriptionService
+        from app.core.tokens import utcnow
+
+        await SubscriptionService(self.db).check_and_expire_trials(family.id)
+
         plan_slug = None
         plan_name = None
         subscription_status = None
         is_demo = False
         current_period_end = None
+        trial_ends_at = None
+        days_remaining = None
         sub = await self.db.scalar(
             select(Subscription).where(Subscription.family_id == family.id)
         )
@@ -88,6 +95,10 @@ class PlatformService:
             subscription_status = sub.status
             is_demo = bool(sub.is_demo)
             current_period_end = sub.current_period_end
+            trial_ends_at = sub.trial_ends_at
+            if sub.status == "trial" and sub.trial_ends_at:
+                now = utcnow()
+                days_remaining = max(0, (sub.trial_ends_at.date() - now.date()).days)
             plan = await self.db.get(Plan, sub.plan_id)
             if plan:
                 plan_slug = plan.slug
@@ -117,6 +128,8 @@ class PlatformService:
             "subscription_status": subscription_status,
             "is_demo": is_demo,
             "current_period_end": current_period_end,
+            "trial_ends_at": trial_ends_at,
+            "days_remaining": days_remaining,
         }
 
     async def _get_primary_parent(self, family_id: int) -> Parent | None:

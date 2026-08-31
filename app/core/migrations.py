@@ -285,7 +285,16 @@ async def run_light_migrations() -> None:
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
         """,
-        "INSERT INTO platform_payment_settings (id) SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM platform_payment_settings WHERE id = 1)",
+        """
+        INSERT INTO platform_payment_settings (id, payment_methods_enabled)
+        SELECT 1, '{"qris_static": true, "bank_transfer": true}'::jsonb
+        WHERE NOT EXISTS (SELECT 1 FROM platform_payment_settings WHERE id = 1)
+        """,
+        """
+        UPDATE platform_payment_settings
+        SET payment_methods_enabled = '{"qris_static": true, "bank_transfer": true}'::jsonb
+        WHERE payment_methods_enabled IS NULL
+        """,
         "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS is_demo BOOLEAN NOT NULL DEFAULT FALSE",
         "CREATE INDEX IF NOT EXISTS ix_subscriptions_is_demo ON subscriptions (is_demo)",
         "ALTER TABLE payments ADD COLUMN IF NOT EXISTS proof_image_url VARCHAR(500)",

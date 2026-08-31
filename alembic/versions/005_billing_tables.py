@@ -145,8 +145,11 @@ def upgrade() -> None:
         )
     """)
     op.execute(
-        "INSERT INTO platform_payment_settings (id) SELECT 1 "
-        "WHERE NOT EXISTS (SELECT 1 FROM platform_payment_settings WHERE id = 1)"
+        """
+        INSERT INTO platform_payment_settings (id, payment_methods_enabled)
+        SELECT 1, '{"qris_static": true, "bank_transfer": true}'::jsonb
+        WHERE NOT EXISTS (SELECT 1 FROM platform_payment_settings WHERE id = 1)
+        """
     )
 
     for plan in _PLANS:

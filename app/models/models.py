@@ -724,7 +724,11 @@ class PlatformPaymentSettings(Base):
     bank_account_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
     bank_account_holder: Mapped[str | None] = mapped_column(String(100), nullable=True)
     transfer_instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
-    payment_methods_enabled: Mapped[dict] = mapped_column(JSON, default=lambda: {"qris_static": True, "bank_transfer": True})
+    payment_methods_enabled: Mapped[dict] = mapped_column(
+        JSON,
+        default=lambda: {"qris_static": True, "bank_transfer": True},
+        server_default='{"qris_static": true, "bank_transfer": true}',
+    )
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 

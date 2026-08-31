@@ -1,5 +1,8 @@
+import json
 import os
+import time
 import uuid
+from pathlib import Path
 
 os.environ.setdefault("TESTING", "1")
 os.environ.setdefault("ENVIRONMENT", "testing")
@@ -19,6 +22,27 @@ from httpx import ASGITransport, AsyncClient
 from app.main import app
 
 TEST_PASSWORD = "Secret123!"
+_DEBUG_LOG = Path(__file__).resolve().parents[3] / "debug-b984bf.log"
+
+
+def _debug_log(hypothesis_id: str, message: str, data: dict) -> None:
+    # #region agent log
+    try:
+        payload = {
+            "sessionId": "b984bf",
+            "hypothesisId": hypothesis_id,
+            "location": "conftest.py",
+            "message": message,
+            "data": data,
+            "timestamp": int(time.time() * 1000),
+            "runId": "lifespan-fix",
+        }
+        _DEBUG_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with _DEBUG_LOG.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(payload) + "\n")
+    except Exception:
+        pass
+    # #endregion
 
 
 def _register_payload(uid: str) -> dict:
@@ -37,10 +61,21 @@ def _register_payload(uid: str) -> dict:
     }
 
 
+@pytest_asyncio.fixture(scope="session")
+async def _app_lifespan():
+    """Run FastAPI startup once per session (migrations, seed plans, platform admin)."""
+    _debug_log("H1", "lifespan_enter", {"fixture": "_app_lifespan"})
+    async with app.router.lifespan_context(app):
+        _debug_log("H1", "lifespan_startup_complete", {"fixture": "_app_lifespan"})
+        yield
+    _debug_log("H1", "lifespan_shutdown", {"fixture": "_app_lifespan"})
+
+
 @pytest_asyncio.fixture
-async def client():
+async def client(_app_lifespan):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        _debug_log("H2", "client_ready", {"has_lifespan_parent": True})
         yield ac
 
 
@@ -76,6 +111,11 @@ async def platform_admin_headers(client: AsyncClient):
     res = await client.post(
         "/api/platform/auth/login",
         json={"email": "admin@familymission.local", "password": "admin123456"},
+    )
+    _debug_log(
+        "H3",
+        "platform_admin_login",
+        {"status_code": res.status_code, "ok": res.status_code == 200},
     )
     assert res.status_code == 200, res.text
     return {"Authorization": f"Bearer {res.json()['access_token']}"}
