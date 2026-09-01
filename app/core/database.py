@@ -7,7 +7,7 @@ from app.core.config import settings
 def _engine_connect_args() -> dict:
     url = settings.database_url.lower()
     if "supabase" in url or "ssl=require" in url:
-        return {"ssl": True}
+        return {"ssl": "require"}
     return {}
 
 
