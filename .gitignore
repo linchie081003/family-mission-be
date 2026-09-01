@@ -5,3 +5,7 @@ uploads/
 .venv/
 venv/
 debug-*.log
+
+# Firebase migration (jangan commit credential / data keluarga)
+migration/serviceAccountKey.json
+migration/exported_*.json
