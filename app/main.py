@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 from contextlib import asynccontextmanager
 
@@ -196,7 +197,14 @@ app.include_router(chat.router, prefix="/api")
 
 
 
-app.mount("/uploads", StaticFiles(directory=settings.upload_dir), name="uploads")
+upload_dir = Path(settings.upload_dir)
+upload_dir.mkdir(parents=True, exist_ok=True)
+
+app.mount(
+    "/uploads",
+    StaticFiles(directory=str(upload_dir)),
+    name="uploads",
+)
 
 
 
