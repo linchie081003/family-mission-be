@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_from: str = ""
     smtp_use_tls: bool = True
+    brevo_api_key: str = ""
+    brevo_sender_email: str = ""
+    brevo_sender_name: str = "Family Mission"
     environment: str = "development"
     rate_limit_auth_per_minute: int = 10
     rate_limit_global_per_minute: int = 100

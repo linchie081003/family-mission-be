@@ -1,14 +1,55 @@
 import asyncio
+import json
 import logging
 import smtplib
+import urllib.error
+import urllib.request
 from email.message import EmailMessage
 
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
 
-def _send_sync(*, to: str, subject: str, body: str) -> bool:
+
+def _sender_email() -> str:
+    return (
+        settings.brevo_sender_email
+        or settings.smtp_from
+        or settings.smtp_user
+        or settings.platform_admin_email
+    )
+
+
+def _sender_name() -> str:
+    return settings.brevo_sender_name or "Family Mission"
+
+
+def _send_brevo_sync(*, to: str, subject: str, body: str) -> bool:
+    if not settings.brevo_api_key or not to:
+        return False
+    payload = {
+        "sender": {"name": _sender_name(), "email": _sender_email()},
+        "to": [{"email": to}],
+        "subject": subject,
+        "textContent": body,
+    }
+    req = urllib.request.Request(
+        BREVO_API_URL,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "accept": "application/json",
+            "content-type": "application/json",
+            "api-key": settings.brevo_api_key,
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        return 200 <= resp.status < 300
+
+
+def _send_smtp_sync(*, to: str, subject: str, body: str) -> bool:
     if not settings.smtp_host or not to:
         return False
     msg = EmailMessage()
@@ -26,14 +67,25 @@ def _send_sync(*, to: str, subject: str, body: str) -> bool:
 
 
 async def send_email(*, to: str, subject: str, body: str) -> bool:
-    if not settings.smtp_host:
-        logger.info("SMTP not configured — skip email to %s: %s", to, subject)
+    if not to:
         return False
-    try:
-        return await asyncio.to_thread(_send_sync, to=to, subject=subject, body=body)
-    except Exception:
-        logger.exception("Failed to send email to %s", to)
-        return False
+    if settings.brevo_api_key:
+        try:
+            return await asyncio.to_thread(_send_brevo_sync, to=to, subject=subject, body=body)
+        except urllib.error.HTTPError as exc:
+            logger.error("Brevo API HTTP %s for %s: %s", exc.code, to, exc.read().decode(errors="replace")[:500])
+            return False
+        except Exception:
+            logger.exception("Failed to send email via Brevo to %s", to)
+            return False
+    if settings.smtp_host:
+        try:
+            return await asyncio.to_thread(_send_smtp_sync, to=to, subject=subject, body=body)
+        except Exception:
+            logger.exception("Failed to send email via SMTP to %s", to)
+            return False
+    logger.info("Email not configured — skip email to %s: %s", to, subject)
+    return False
 
 
 async def send_verification_email(*, to: str, link: str) -> bool:
