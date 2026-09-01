@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.tokens import utcnow
+from app.core.upload_url import get_upload_url
 from app.models.models import Family, Payment, Plan, PlatformAuditLog, PlatformPaymentSettings, Subscription
 from app.services.proof_image import validate_proof_image
 from app.services.subscription_service import SubscriptionService
@@ -153,7 +154,7 @@ class PlatformBillingService:
     def _settings_to_dict(self, row: PlatformPaymentSettings) -> dict:
         enabled = row.payment_methods_enabled or {"qris_static": True, "bank_transfer": True}
         return {
-            "qris_image_url": row.qris_image_url or settings.payment_qris_image_url or None,
+            "qris_image_url": get_upload_url(row.qris_image_url or settings.payment_qris_image_url or None),
             "qris_merchant_name": row.qris_merchant_name or None,
             "bank_name": row.bank_name or settings.payment_bank_name or None,
             "bank_account_number": row.bank_account_number or settings.payment_bank_account or None,
@@ -196,7 +197,7 @@ class PlatformBillingService:
             f.write(content)
         url = f"/uploads/{safe_name}"
         await self.update_payment_settings({"qris_image_url": url})
-        return url
+        return get_upload_url(url)
 
     def _save_proof_image_file(self, proof_image: str) -> str:
         cleaned = validate_proof_image(proof_image, required=True)
@@ -239,7 +240,7 @@ class PlatformBillingService:
             "created_at": payment.created_at,
             "plan_slug": plan_slug,
             "subscription_id": payment.subscription_id,
-            "proof_image_url": payment.proof_image_url,
+            "proof_image_url": get_upload_url(payment.proof_image_url),
             "rejection_reason": payment.rejection_reason,
         }
 

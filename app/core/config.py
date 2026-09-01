@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     rate_limit_invite_per_hour: int = 10
     max_upload_bytes: int = 2 * 1024 * 1024
     frontend_base_url: str = "http://localhost:5173"
+    backend_base_url: str = "http://localhost:8000"
     email_token_expire_hours: int = 24
     reset_token_expire_minutes: int = 45
     redemption_mode: str = "symbolic"

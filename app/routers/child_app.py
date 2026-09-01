@@ -11,6 +11,7 @@ import uuid
 
 from app.core.auth import get_current_child
 from app.core.config import settings
+from app.core.upload_url import get_upload_url
 from app.core.database import get_db
 from app.core.security import validate_upload
 from app.models.models import (
@@ -330,7 +331,7 @@ async def upload_avatar(
         await f.write(content)
 
     child.avatar_url = f"/uploads/{filename}"
-    return {"avatar_url": child.avatar_url}
+    return {"avatar_url": get_upload_url(child.avatar_url)}
 
 
 @router.get("/calendar", response_model=CalendarResponse)

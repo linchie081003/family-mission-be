@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.auth import get_current_family
+from app.core.upload_url import get_upload_url
 from app.database import get_db
 from app.models.models import (
     BadgeDefinition,
@@ -127,7 +128,7 @@ async def get_pending(
                 "mission_id": c.mission_id,
                 "category": c.mission.category.value,
                 "note": c.note,
-                "proof_image": c.proof_image,
+                "proof_image": get_upload_url(c.proof_image),
             },
         ))
 

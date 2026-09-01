@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_platform_admin
 from app.core.database import get_db
+from app.core.upload_url import get_upload_url
 from app.middleware.rate_limit import check_rate_limit
 from app.models.models import PlatformAdmin
 from app.schemas import (
@@ -564,7 +565,7 @@ async def upload_qris_image(
         content, file.content_type, file.filename or "qris.png"
     )
     await db.commit()
-    return {"qris_image_url": url}
+    return {"qris_image_url": get_upload_url(url)}
 
 
 @router.get("/trials", response_model=TrialListResponse)

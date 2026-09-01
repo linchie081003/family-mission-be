@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_current_family
+from app.core.upload_url import get_upload_url
 from app.database import get_db
 from app.models.models import Child, Family
 from app.schemas import ChildCreate, ChildPublic, ChildUpdate
@@ -22,7 +23,7 @@ async def child_to_public(child: Child, db: AsyncSession) -> ChildPublic:
         name=child.name,
         color=child.color,
         weekly_target=child.weekly_target,
-        avatar_url=child.avatar_url,
+        avatar_url=get_upload_url(child.avatar_url),
         lifetime_points=child.lifetime_points,
         active_balance=child.active_balance,
         spendable_balance=spendable,

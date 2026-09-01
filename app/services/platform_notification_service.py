@@ -5,6 +5,7 @@ from app.models.models import Family, NotificationType, Parent, Payment, Plan, P
 from app.services.email_service import send_email
 from app.services.notification_service import notify_parent
 from app.core.config import settings
+from app.core.upload_url import get_upload_url
 
 
 class PlatformNotificationService:
@@ -58,7 +59,7 @@ class PlatformNotificationService:
                 "payment_id": payment.id,
                 "plan_slug": plan.slug,
                 "amount": payment.amount,
-                "proof_image_url": payment.proof_image_url,
+                "proof_image_url": get_upload_url(payment.proof_image_url),
                 "action_path": "/admin/billing/verification",
             },
         )
