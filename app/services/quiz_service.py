@@ -6,7 +6,6 @@ from sqlalchemy import and_, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.debug_log import debug_log
 from app.models.models import (
     Child,
     Family,
@@ -260,18 +259,6 @@ class QuizService:
 
     async def create_family_quiz(self, family: Family, data: FamilyQuizCreate) -> dict:
         assert_feature_enabled(family, "quiz")
-        # #region agent log
-        debug_log(
-            location="quiz_service.py:create_family_quiz",
-            message="Create family quiz payload",
-            data={
-                "family_id": family.id,
-                "points_reward": data.points_reward,
-                "passing_score": data.passing_score,
-            },
-            hypothesis_id="B",
-        )
-        # #endregion
         if data.questions_per_attempt and data.questions_per_attempt > len(data.questions):
             raise HTTPException(status_code=400, detail="Soal per attempt melebihi bank soal")
         quiz = Quiz(
@@ -293,18 +280,6 @@ class QuizService:
 
     async def update_family_quiz(self, family: Family, quiz_id: int, data: FamilyQuizUpdate) -> dict:
         assert_feature_enabled(family, "quiz")
-        # #region agent log
-        debug_log(
-            location="quiz_service.py:update_family_quiz",
-            message="Update family quiz payload",
-            data={
-                "quiz_id": quiz_id,
-                "points_reward": data.points_reward,
-                "passing_score": data.passing_score,
-            },
-            hypothesis_id="B",
-        )
-        # #endregion
         if data.questions_per_attempt and data.questions_per_attempt > len(data.questions):
             raise HTTPException(status_code=400, detail="Soal per attempt melebihi bank soal")
         quiz = await self._get_quiz_with_questions(quiz_id, family.id, active_only=False)
