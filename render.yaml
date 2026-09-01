@@ -1,0 +1,44 @@
+# Render Blueprint — Family Mission staging (free tier)
+# Repo root directory di Render harus di-set ke folder `new/` (Settings → Root Directory).
+# Secrets (DATABASE_URL, SECRET_KEY, dll.) di-set manual di dashboard setelah blueprint apply.
+
+services:
+  - type: web
+    name: family-mission-api
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /api/health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: PLATFORM_ADMIN_PASSWORD
+        sync: false
+      - key: PLATFORM_ADMIN_EMAIL
+        value: admin@familymission.local
+      - key: CORS_ORIGINS
+        sync: false
+      - key: FRONTEND_BASE_URL
+        sync: false
+      - key: REDIS_URL
+        value: ""
+      - key: SMTP_HOST
+        value: ""
+
+  - type: web
+    name: family-mission-web
+    runtime: static
+    plan: free
+    region: singapore
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./dist
+    envVars:
+      - key: VITE_API_BASE
+        sync: false
