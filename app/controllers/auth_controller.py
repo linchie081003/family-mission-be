@@ -87,7 +87,14 @@ async def reset_password(
 
 
 @router.get("/me", response_model=FamilyPublic)
-async def get_me(family: Annotated[Family, Depends(get_current_family)]):
+async def get_me(
+    family: Annotated[Family, Depends(get_current_family)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    from app.services.subscription_service import SubscriptionService
+
+    await SubscriptionService(db).check_and_expire_trials(family.id)
+    await db.refresh(family)
     return family
 
 
