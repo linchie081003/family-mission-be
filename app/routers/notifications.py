@@ -8,6 +8,7 @@ from app.auth import get_current_child, get_current_family
 from app.database import get_db
 from app.models.models import Child, Family, Notification, RecipientRole
 from app.schemas import NotificationPublic, UnreadCountResponse
+from app.services.notification_features import notification_type_filter
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
@@ -47,7 +48,12 @@ async def list_notifications(
     unread_only: bool = False,
     limit: int = 50,
 ):
-    q = select(Notification).where(_parent_filter(family.id)).order_by(Notification.created_at.desc()).limit(limit)
+    q = (
+        select(Notification)
+        .where(_parent_filter(family.id), notification_type_filter(family))
+        .order_by(Notification.created_at.desc())
+        .limit(limit)
+    )
     if unread_only:
         q = q.where(Notification.is_read == False)
     result = await db.execute(q)
@@ -62,6 +68,7 @@ async def unread_count_parent(
     result = await db.execute(
         select(func.count()).select_from(Notification).where(
             _parent_filter(family.id),
+            notification_type_filter(family),
             Notification.is_read == False,
         )
     )
@@ -102,7 +109,15 @@ async def list_child_notifications(
     unread_only: bool = False,
     limit: int = 50,
 ):
-    q = select(Notification).where(_child_filter(child.family_id, child.id)).order_by(Notification.created_at.desc()).limit(limit)
+    family = await db.get(Family, child.family_id)
+    if not family:
+        return []
+    q = (
+        select(Notification)
+        .where(_child_filter(child.family_id, child.id), notification_type_filter(family))
+        .order_by(Notification.created_at.desc())
+        .limit(limit)
+    )
     if unread_only:
         q = q.where(Notification.is_read == False)
     result = await db.execute(q)
@@ -114,9 +129,13 @@ async def unread_count_child(
     child: Annotated[Child, Depends(get_current_child)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
+    family = await db.get(Family, child.family_id)
+    if not family:
+        return UnreadCountResponse(count=0)
     result = await db.execute(
         select(func.count()).select_from(Notification).where(
             _child_filter(child.family_id, child.id),
+            notification_type_filter(family),
             Notification.is_read == False,
         )
     )

@@ -1,6 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.models import Notification, NotificationType, RecipientRole
+from app.models.models import Family, Notification, NotificationType, RecipientRole
+from app.services.notification_features import is_notification_type_allowed
 from app.websocket.manager import ws_manager
 
 
@@ -14,7 +15,11 @@ async def push_notification(
     child_id: int | None = None,
     data: dict | None = None,
     commit: bool = False,
-) -> Notification:
+) -> Notification | None:
+    family = await db.get(Family, family_id)
+    if not family or not is_notification_type_allowed(family, type):
+        return None
+
     notification = Notification(
         family_id=family_id,
         recipient_role=recipient_role,
@@ -56,7 +61,7 @@ async def notify_parent(
     body: str,
     child_id: int | None = None,
     data: dict | None = None,
-) -> Notification:
+) -> Notification | None:
     return await push_notification(
         db, family_id, RecipientRole.PARENT, type, title, body, child_id=child_id, data=data
     )
@@ -70,7 +75,7 @@ async def notify_child(
     title: str,
     body: str,
     data: dict | None = None,
-) -> Notification:
+) -> Notification | None:
     return await push_notification(
         db, family_id, RecipientRole.CHILD, type, title, body, child_id=child_id, data=data
     )
