@@ -1,5 +1,8 @@
 from calendar import monthrange
 from datetime import date, datetime, timedelta, timezone
+import json
+import time
+from pathlib import Path
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,11 +10,35 @@ from sqlalchemy.orm import selectinload
 
 from app.models.models import (
     CompletionStatus,
+    Family,
     FamilyAgenda,
     MissionCompletion,
     PointTransaction,
     Child,
 )
+
+# #region agent log
+_DEBUG_LOG = Path(__file__).resolve().parents[4] / "debug-b984bf.log"
+
+
+def _agent_log(location: str, message: str, data: dict, hypothesis_id: str) -> None:
+    try:
+        payload = {
+            "sessionId": "b984bf",
+            "location": location,
+            "message": message,
+            "data": data,
+            "hypothesisId": hypothesis_id,
+            "timestamp": int(time.time() * 1000),
+            "runId": "pre-fix",
+        }
+        with _DEBUG_LOG.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(payload) + "\n")
+    except Exception:
+        pass
+
+
+# #endregion
 
 
 def parse_month(month: str) -> tuple[date, date]:
@@ -42,6 +69,12 @@ async def build_calendar(
         )
     )
     completions = completions_result.scalars().all()
+
+    family = await db.get(Family, family_id)
+    family_flags = {
+        "rewards_enabled": bool(family.rewards_enabled) if family else None,
+        "daily_point_limit": family.daily_point_limit if family else None,
+    }
 
     tx_result = await db.execute(
         select(PointTransaction).where(
@@ -75,6 +108,39 @@ async def build_calendar(
     for c in completions:
         d = c.completed_at.date()
         day = ensure_day(d)
+        mission_points = c.mission.points if c.mission else 0
+        # #region agent log
+        if mission_points > 0 and c.points_awarded == 0:
+            _agent_log(
+                "calendar_service.py:build_calendar",
+                "mission points mismatch",
+                {
+                    "completion_id": c.id,
+                    "status": c.status.value,
+                    "points_awarded": c.points_awarded,
+                    "mission_points": mission_points,
+                    "mission_category": c.mission.category.value if c.mission else None,
+                    "child_id": child_id,
+                    "completed_date": d.isoformat(),
+                    **family_flags,
+                },
+                "A" if not family_flags.get("rewards_enabled") else "B",
+            )
+        _agent_log(
+            "calendar_service.py:build_calendar",
+            "calendar mission row",
+            {
+                "completion_id": c.id,
+                "status": c.status.value,
+                "points_awarded": c.points_awarded,
+                "mission_points": mission_points,
+                "child_id": child_id,
+                "completed_date": d.isoformat(),
+                **family_flags,
+            },
+            "C" if c.status.value == "pending" else "E",
+        )
+        # #endregion
         day["missions"].append({
             "id": c.id,
             "title": c.mission.title,
