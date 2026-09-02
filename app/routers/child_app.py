@@ -113,6 +113,7 @@ async def child_home(
         chat_enabled=bool(family and family.chat_enabled),
         chat_unread_count=await ChatService(db).child_unread_count(child, family) if family and family.chat_enabled else 0,
         rewards_enabled=bool(family and family.rewards_enabled),
+        agenda_enabled=bool(family and family.agenda_enabled),
         mission_evidence_enabled=bool(family and family.mission_evidence_enabled),
         daily_mission_limit=family.daily_mission_limit if family else None,
     )

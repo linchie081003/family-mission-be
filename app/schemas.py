@@ -587,6 +587,7 @@ class ChildListItem(BaseModel):
     id: int
     name: str
     color: str
+    avatar_url: Optional[str] = None
     has_pin: bool
 
     model_config = {"from_attributes": True}
@@ -728,6 +729,7 @@ class ChildRanking(BaseModel):
     id: int
     name: str
     color: str
+    avatar_url: Optional[str] = None
     lifetime_points: int
     active_balance: int
     weekly_points: int
@@ -748,6 +750,7 @@ class PendingItem(BaseModel):
     type: str
     child_name: str
     child_color: str
+    child_avatar_url: Optional[str] = None
     title: str
     points: int
     created_at: datetime
@@ -789,6 +792,7 @@ class ChildReportSummary(BaseModel):
     id: int
     name: str
     color: str
+    avatar_url: Optional[str] = None
     weekly_points: int
     lifetime_points: int
     spendable_balance: int
@@ -858,6 +862,7 @@ class ChildHomeData(BaseModel):
     chat_enabled: bool = False
     chat_unread_count: int = 0
     rewards_enabled: bool = False
+    agenda_enabled: bool = False
     mission_evidence_enabled: bool = False
     daily_mission_limit: Optional[int] = None
 
@@ -923,6 +928,7 @@ class CalendarDayMission(BaseModel):
     title: str
     status: str
     points: int
+    mission_points: int = 0
 
 
 class CalendarDayPointEntry(BaseModel):

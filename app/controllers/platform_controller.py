@@ -271,6 +271,17 @@ async def update_family_features(
     return await PlatformService(db).family_public_item(family)
 
 
+@router.delete("/families/{family_id}")
+async def delete_inactive_family(
+    family_id: int,
+    admin: Annotated[PlatformAdmin, Depends(get_current_platform_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    result = await PlatformService(db).delete_inactive_family(admin, family_id)
+    await db.commit()
+    return result
+
+
 @router.get("/audit", response_model=list[PlatformAuditLogPublic])
 async def list_platform_audit(
     admin: Annotated[PlatformAdmin, Depends(get_current_platform_admin)],

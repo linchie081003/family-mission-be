@@ -467,3 +467,48 @@ class PlatformService:
             family_id,
             PlatformFamilyFeaturesUpdate(is_active=True),
         )
+
+    async def delete_inactive_family(self, admin: PlatformAdmin, family_id: int) -> dict:
+        from app.models.models import PlatformNotification
+
+        family = await self.db.get(Family, family_id)
+        if not family:
+            raise HTTPException(status_code=404, detail="Keluarga tidak ditemukan")
+        if family.is_active:
+            raise HTTPException(
+                status_code=400,
+                detail="Tenant masih aktif. Nonaktifkan dulu sebelum menghapus.",
+            )
+
+        snapshot = {
+            "id": family.id,
+            "family_name": family.family_name,
+            "email": family.email,
+            "family_code": family.family_code,
+        }
+
+        self.db.add(
+            PlatformNotification(
+                type="tenant_deleted",
+                title="Tenant dihapus",
+                body=(
+                    f"Super Admin menghapus tenant nonaktif: "
+                    f"{family.family_name} ({family.email})"
+                ),
+                family_id=family.id,
+                data={
+                    **snapshot,
+                    "deleted_by_admin_id": admin.id,
+                    "deleted_by_admin_email": admin.email,
+                },
+            )
+        )
+        await self.db.flush()
+
+        await self.db.delete(family)
+        await self.db.flush()
+
+        return {
+            "message": f"Tenant {snapshot['family_name']} berhasil dihapus permanen.",
+            "deleted": snapshot,
+        }
