@@ -56,3 +56,27 @@ python migration/import_to_postgres.py `
 4. Anak login → buat PIN baru
 5. Simpan file JSON export sebagai backup
 6. Hapus `serviceAccountKey.json` dari komputer
+
+## Langkah 3: Sync ke Supabase (opsional)
+
+Jika data sudah di PostgreSQL lokal dan ingin dipindah ke Supabase:
+
+```powershell
+# 1. Buat migration/.env.supabase dari .env.supabase.example
+# 2. Isi TARGET_DATABASE_URL (URI Supabase Session pooler)
+
+python migration/sync_local_to_supabase.py `
+  --family-email parent@keluarga-mission.id `
+  --init-target `
+  --replace
+```
+
+Opsi `--init-target` membuat schema + seed plan di Supabase (jika belum pernah deploy backend).
+Opsi `--replace` menimpa keluarga dengan email yang sama di Supabase.
+
+Alternatif cepat (tanpa sync dari lokal): jalankan ulang import langsung ke Supabase:
+
+```powershell
+$env:DATABASE_URL="postgresql+asyncpg://...@...supabase.com:6543/postgres"
+python migration/import_to_postgres.py --email ... --password ...
+```

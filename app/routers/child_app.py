@@ -5,9 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-import aiofiles
-import os
-import uuid
+from app.services.avatar_image import avatar_content_to_data_url
 
 from app.core.auth import get_current_child
 from app.core.config import settings
@@ -31,7 +29,7 @@ from app.models.models import (
 )
 from app.routers.children import child_to_public
 from app.routers.missions import mission_to_public
-from app.schemas import ChildHomeData, GoalCreate, GoalPublic, MissionPublic, PointsSummary, QuizSubmitRequest, ChatSendRequest, RedemptionSummary, RewardPublic, TransactionPublic, CalendarResponse, WeeklyPointsReport
+from app.schemas import ChildHomeData, ChildProfileUpdate, GoalCreate, GoalPublic, MissionPublic, PointsSummary, QuizSubmitRequest, ChatSendRequest, RedemptionSummary, RewardPublic, TransactionPublic, CalendarResponse, WeeklyPointsReport
 from app.services.gamification import get_level_progress
 from app.services.calendar_service import build_calendar
 from app.services.chat_service import ChatService
@@ -243,20 +241,10 @@ async def child_chat_unread_count(
 async def child_chat_messages(
     child: Annotated[Child, Depends(get_current_child)],
     db: Annotated[AsyncSession, Depends(get_db)],
-    limit: int = Query(50, ge=1, le=100),
+    limit: int = Query(100, ge=1, le=200),
 ):
     family = await db.get(Family, child.family_id)
-    messages = await ChatService(db).get_messages(family, child.id, limit=limit)
-    return [
-        {
-            "id": m.id,
-            "sender_role": m.sender_role,
-            "body": m.body,
-            "created_at": m.created_at.isoformat(),
-            "read_at": m.read_at.isoformat() if m.read_at else None,
-        }
-        for m in messages
-    ]
+    return await ChatService(db).get_family_messages(family, limit=limit)
 
 
 @router.post("/chat/messages")
@@ -266,7 +254,9 @@ async def child_chat_send(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     family = await db.get(Family, child.family_id)
-    msg = await ChatService(db).send_message(family, child.id, "child", data.body)
+    msg = await ChatService(db).send_family_message(
+        family, sender_role="child", body=data.body, child=child,
+    )
     return {"id": msg.id, "created_at": msg.created_at.isoformat()}
 
 
@@ -314,23 +304,28 @@ async def level_info(child: Annotated[Child, Depends(get_current_child)]):
     }
 
 
+@router.patch("/profile")
+async def update_child_profile(
+    data: ChildProfileUpdate,
+    child: Annotated[Child, Depends(get_current_child)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    if data.display_name is not None:
+        child.display_name = data.display_name.strip() or None
+    await db.commit()
+    return await child_to_public(child, db)
+
+
 @router.post("/avatar")
 async def upload_avatar(
     file: UploadFile = File(...),
     child: Annotated[Child, Depends(get_current_child)] = None,
     db: Annotated[AsyncSession, Depends(get_db)] = None,
 ):
-    os.makedirs(settings.upload_dir, exist_ok=True)
     content = await file.read()
     validate_upload(file.filename or "avatar.jpg", file.content_type, len(content))
-    ext = os.path.splitext(file.filename or "avatar.jpg")[1].lower() or ".jpg"
-    filename = f"{child.id}_{uuid.uuid4().hex}{ext}"
-    filepath = os.path.join(settings.upload_dir, filename)
-
-    async with aiofiles.open(filepath, "wb") as f:
-        await f.write(content)
-
-    child.avatar_url = f"/uploads/{filename}"
+    child.avatar_url = avatar_content_to_data_url(content, file.content_type)
+    await db.commit()
     return {"avatar_url": get_upload_url(child.avatar_url)}
 
 

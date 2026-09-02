@@ -9,7 +9,7 @@ from app.core.auth import get_current_parent
 from app.core.database import get_db
 from app.middleware.rate_limit import check_rate_limit
 from app.models.models import Parent
-from app.schemas import AcceptParentInviteRequest, MessageResponse, ParentInviteCreate, ParentPublic
+from app.schemas import AcceptParentInviteRequest, MessageResponse, ParentInviteCreate, ParentInviteResponse, ParentPublic
 from app.services.parent_service import ParentService
 
 router = APIRouter(prefix="/parents", tags=["parents"])
@@ -23,7 +23,7 @@ async def list_parents(
     return await ParentService(db).list_parents(parent)
 
 
-@router.post("/invite", response_model=MessageResponse)
+@router.post("/invite", response_model=ParentInviteResponse)
 async def invite_parent(
     data: ParentInviteCreate,
     request: Request,
@@ -40,6 +40,23 @@ async def accept_invite(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     return await ParentService(db).accept_invite(data)
+
+
+@router.get("/invites/pending")
+async def list_pending_invites(
+    parent: Annotated[Parent, Depends(get_current_parent)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    return await ParentService(db).list_pending_invites(parent)
+
+
+@router.post("/invites/{invite_id}/resend", response_model=ParentInviteResponse)
+async def resend_invite(
+    invite_id: int,
+    parent: Annotated[Parent, Depends(get_current_parent)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    return await ParentService(db).resend_invite(parent, invite_id)
 
 
 @router.delete("/{parent_id}", response_model=MessageResponse)

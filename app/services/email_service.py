@@ -66,6 +66,22 @@ def _send_smtp_sync(*, to: str, subject: str, body: str) -> bool:
     return True
 
 
+def email_provider_status() -> dict:
+    sender = _sender_email()
+    if settings.brevo_api_key:
+        provider = "brevo"
+    elif settings.smtp_host:
+        provider = "smtp"
+    else:
+        provider = "none"
+    return {
+        "provider": provider,
+        "brevo_key_set": bool(settings.brevo_api_key),
+        "smtp_host_set": bool(settings.smtp_host),
+        "sender_email_set": bool(sender),
+    }
+
+
 async def send_email(*, to: str, subject: str, body: str) -> bool:
     if not to:
         return False
@@ -73,7 +89,19 @@ async def send_email(*, to: str, subject: str, body: str) -> bool:
         try:
             return await asyncio.to_thread(_send_brevo_sync, to=to, subject=subject, body=body)
         except urllib.error.HTTPError as exc:
-            logger.error("Brevo API HTTP %s for %s: %s", exc.code, to, exc.read().decode(errors="replace")[:500])
+            err_body = exc.read().decode(errors="replace")[:500]
+            logger.error("Brevo API HTTP %s for %s: %s", exc.code, to, err_body)
+            if "unrecognised IP" in err_body or "authorised_ips" in err_body:
+                logger.error(
+                    "Brevo blocked server IP (common on Render). "
+                    "Disable IP restriction or add IP at https://app.brevo.com/security/authorised_ips"
+                )
+            elif "sender" in err_body.lower() and "not valid" in err_body.lower():
+                logger.error(
+                    "Brevo rejected sender %s — verify this address or authenticate the domain at "
+                    "https://app.brevo.com/senders",
+                    _sender_email(),
+                )
             return False
         except Exception:
             logger.exception("Failed to send email via Brevo to %s", to)

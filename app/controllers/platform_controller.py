@@ -204,6 +204,35 @@ async def resend_family_verification(
     return await PlatformService(db).family_public_item(family)
 
 
+@router.post("/families/{family_id}/coparent-invites/{invite_id}/resend")
+async def platform_resend_coparent_invite(
+    family_id: int,
+    invite_id: int,
+    admin: Annotated[PlatformAdmin, Depends(get_current_platform_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    from app.services.parent_service import ParentService
+
+    result = await ParentService(db).resend_invite_for_family(family_id, invite_id)
+    await db.commit()
+    return result
+
+
+@router.get("/families/{family_id}/coparent-invites/pending")
+async def platform_list_pending_coparent_invites(
+    family_id: int,
+    admin: Annotated[PlatformAdmin, Depends(get_current_platform_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    from app.repositories.parent_repository import ParentRepository
+    from app.services.parent_service import ParentService
+
+    primary = await ParentRepository(db).get_primary(family_id)
+    if not primary:
+        return []
+    return await ParentService(db).list_pending_invites(primary)
+
+
 @router.post("/families/{family_id}/verify-email", response_model=PlatformFamilyPublic)
 async def manual_verify_family_email(
     family_id: int,

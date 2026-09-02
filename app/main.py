@@ -1,6 +1,8 @@
 import os
 from pathlib import Path
 
+import json
+
 from contextlib import asynccontextmanager
 
 
@@ -63,7 +65,8 @@ from app.routers import (
 from app.services.reminders import check_agenda_reminders, check_inactivity_reminders
 from app.services.snapshot_service import run_all_weekly_snapshots
 from app.services.quiz_service import seed_default_templates
-from app.core.migrations import run_light_migrations
+from app.core.migrations_entry import run_light_migrations
+from app.core.chat_migrations import run_chat_migrations
 from app.middleware.rate_limit import close_redis
 
 from app.websocket.manager import ws_manager
@@ -114,6 +117,7 @@ async def lifespan(app: FastAPI):
 
     # Schema drift fixes + data backfills — single runtime migration path (see alembic/README).
     await run_light_migrations()
+    await run_chat_migrations()
 
     await seed_platform_admin()
     async with async_session() as db:
@@ -210,11 +214,21 @@ app.mount(
 
 
 
+from app.services.email_service import email_provider_status
+
+
 @app.get("/api/health")
-
 async def health():
-
     return {"status": "ok", "architecture": "mvc"}
+
+
+@app.get("/api/health/email")
+async def health_email():
+    status = email_provider_status()
+    return {
+        "configured": status["provider"] != "none" and status["sender_email_set"],
+        **status,
+    }
 
 
 
@@ -260,7 +274,13 @@ async def websocket_endpoint(websocket: WebSocket, family_id: int, token: str = 
 
         while True:
 
-            await websocket.receive_text()
+            raw = await websocket.receive_text()
+            try:
+                payload = json.loads(raw)
+                if payload.get("event") == "ping":
+                    await websocket.send_text(json.dumps({"event": "pong"}))
+            except json.JSONDecodeError:
+                pass
 
     except WebSocketDisconnect:
 

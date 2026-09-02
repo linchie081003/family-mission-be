@@ -30,6 +30,12 @@ services:
         value: ""
       - key: SMTP_HOST
         value: ""
+      - key: BREVO_API_KEY
+        sync: false
+      - key: BREVO_SENDER_EMAIL
+        sync: false
+      - key: BREVO_SENDER_NAME
+        value: Family Mission
 
   - type: web
     name: family-mission-web

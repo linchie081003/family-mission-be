@@ -21,6 +21,7 @@ async def child_to_public(child: Child, db: AsyncSession) -> ChildPublic:
     return ChildPublic(
         id=child.id,
         name=child.name,
+        display_name=child.display_name,
         color=child.color,
         weekly_target=child.weekly_target,
         avatar_url=get_upload_url(child.avatar_url),
@@ -99,6 +100,10 @@ async def update_child(
     if data.name is not None:
         changes["name"] = {"from": child.name, "to": data.name}
         child.name = data.name
+    if data.display_name is not None:
+        cleaned = data.display_name.strip() or None
+        changes["display_name"] = {"from": child.display_name, "to": cleaned}
+        child.display_name = cleaned
     if data.color is not None:
         changes["color"] = {"from": child.color, "to": data.color}
         child.color = data.color

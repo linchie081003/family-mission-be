@@ -9,3 +9,5 @@ debug-*.log
 # Firebase migration (jangan commit credential / data keluarga)
 migration/serviceAccountKey.json
 migration/exported_*.json
+migration/.env.supabase
+migration/upload_bundle/

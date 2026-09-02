@@ -35,6 +35,16 @@ class ParentRepository:
         )
         return result.scalar_one()
 
+    async def get_primary(self, family_id: int) -> Parent | None:
+        result = await self.db.execute(
+            select(Parent).where(
+                Parent.family_id == family_id,
+                Parent.is_primary.is_(True),
+                Parent.is_active.is_(True),
+            )
+        )
+        return result.scalar_one_or_none()
+
     async def create(
         self,
         *,

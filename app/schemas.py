@@ -108,6 +108,11 @@ class MessageResponse(BaseModel):
     message: str
 
 
+class ParentInviteResponse(BaseModel):
+    message: str
+    email_sent: bool
+
+
 class FamilyPublic(BaseModel):
     id: int
     email: str
@@ -549,13 +554,19 @@ class ChildCreate(BaseModel):
 
 class ChildUpdate(BaseModel):
     name: Optional[str] = None
+    display_name: Optional[str] = Field(default=None, max_length=100)
     color: Optional[str] = None
     weekly_target: Optional[int] = None
+
+
+class ChildProfileUpdate(BaseModel):
+    display_name: Optional[str] = Field(default=None, max_length=100)
 
 
 class ChildPublic(BaseModel):
     id: int
     name: str
+    display_name: Optional[str] = None
     color: str
     weekly_target: int
     avatar_url: Optional[str] = None

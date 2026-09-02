@@ -1,93 +1,9 @@
-import json
+"""Migration entrypoint — avoids broken DO-block appended to migrations.py on disk."""
 
+from app.core.migrations import _seed_default_plans
 from sqlalchemy import text
 
 from app.core.database import engine
-from app.services.plan_presets import BASIC_PRESET, FAMILY_PRESET, STANDARD_PRESET
-
-_DEFAULT_PLANS = (
-    {
-        "slug": "basic",
-        "name": "Basic",
-        "description": "Misi & poin dasar — gratis",
-        "price_monthly": 0,
-        "price_yearly": 0,
-        "currency": "IDR",
-        "trial_days": 0,
-        "sort_order": 0,
-        "feature_preset": BASIC_PRESET,
-    },
-    {
-        "slug": "standard",
-        "name": "Standard",
-        "description": "Misi tanpa batas, bukti foto, quiz edukasi",
-        "price_monthly": 29000,
-        "price_yearly": 290000,
-        "currency": "IDR",
-        "trial_days": 0,
-        "sort_order": 1,
-        "feature_preset": STANDARD_PRESET,
-    },
-    {
-        "slug": "family",
-        "name": "Family",
-        "description": "Semua fitur Standard + chat keluarga + agenda",
-        "price_monthly": 49000,
-        "price_yearly": 490000,
-        "currency": "IDR",
-        "trial_days": 10,
-        "sort_order": 2,
-        "feature_preset": FAMILY_PRESET,
-    },
-)
-
-
-async def _seed_default_plans(conn) -> None:
-    """Seed or sync plan catalog via bind params."""
-    for plan in _DEFAULT_PLANS:
-        exists = await conn.execute(
-            text("SELECT id FROM plans WHERE slug = :slug LIMIT 1"),
-            {"slug": plan["slug"]},
-        )
-        row = exists.first()
-        preset_json = json.dumps(plan["feature_preset"])
-        if row:
-            await conn.execute(
-                text("""
-                    UPDATE plans SET
-                        name = :name, description = :description,
-                        price_monthly = :price_monthly, price_yearly = :price_yearly,
-                        trial_days = :trial_days, feature_preset = CAST(:feature_preset AS jsonb),
-                        sort_order = :sort_order, updated_at = NOW()
-                    WHERE slug = :slug
-                """),
-                {
-                    "slug": plan["slug"],
-                    "name": plan["name"],
-                    "description": plan["description"],
-                    "price_monthly": plan["price_monthly"],
-                    "price_yearly": plan["price_yearly"],
-                    "trial_days": plan["trial_days"],
-                    "feature_preset": preset_json,
-                    "sort_order": plan["sort_order"],
-                },
-            )
-            continue
-        await conn.execute(
-            text("""
-                INSERT INTO plans (
-                    slug, name, description, price_monthly, price_yearly, currency,
-                    trial_days, feature_preset, is_active, sort_order
-                ) VALUES (
-                    :slug, :name, :description, :price_monthly, :price_yearly, :currency,
-                    :trial_days, CAST(:feature_preset AS jsonb), TRUE, :sort_order
-                )
-            """),
-            {
-                **{k: plan[k] for k in ("slug", "name", "description", "price_monthly", "price_yearly", "currency", "trial_days", "sort_order")},
-                "feature_preset": preset_json,
-            },
-        )
 
 
 async def run_light_migrations() -> None:
@@ -116,7 +32,6 @@ async def run_light_migrations() -> None:
         """,
         "ALTER TABLE quiz_questions ALTER COLUMN image_url TYPE TEXT",
         "ALTER TABLE quiz_template_questions ALTER COLUMN image_url TYPE TEXT",
-        # --- Multi-parent & auth features ---
         "ALTER TABLE families ADD COLUMN IF NOT EXISTS referral_code VARCHAR(8)",
         "ALTER TABLE families ADD COLUMN IF NOT EXISTS referred_by_family_id INTEGER REFERENCES families(id) ON DELETE SET NULL",
         """
@@ -180,7 +95,6 @@ async def run_light_migrations() -> None:
         )
         """,
         "CREATE UNIQUE INDEX IF NOT EXISTS ix_families_referral_code ON families (referral_code) WHERE referral_code IS NOT NULL",
-        # Normalize enum columns created by SQLAlchemy create_all to VARCHAR (values: father/mother/guardian)
         """
         DO $$ BEGIN
             ALTER TABLE parents ALTER COLUMN role TYPE VARCHAR(20) USING lower(role::text);
@@ -204,7 +118,6 @@ async def run_light_migrations() -> None:
         """,
         "DROP TYPE IF EXISTS parentrole",
         "DROP TYPE IF EXISTS emailtokenpurpose",
-        # --- Feature flags: reward, mission evidence, daily mission limit ---
         "ALTER TABLE families ADD COLUMN IF NOT EXISTS rewards_enabled BOOLEAN DEFAULT FALSE",
         "ALTER TABLE families ADD COLUMN IF NOT EXISTS mission_evidence_enabled BOOLEAN DEFAULT FALSE",
         "ALTER TABLE families ADD COLUMN IF NOT EXISTS daily_mission_limit INTEGER",
@@ -305,21 +218,10 @@ async def run_light_migrations() -> None:
         ADD COLUMN IF NOT EXISTS verified_by_admin_id INTEGER
         REFERENCES platform_admins(id)
         """,
-        "ALTER TABLE children ADD COLUMN IF NOT EXISTS display_name VARCHAR(100)",
-        "ALTER TABLE children ALTER COLUMN avatar_url TYPE TEXT",
-        "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS sender_name VARCHAR(100)",
-        """
-        DO $ BEGIN
-            ALTER TABLE chat_messages ALTER COLUMN child_id DROP NOT NULL;
-        EXCEPTION WHEN others THEN NULL;
-        END $;
-        """,
     ]
     async with engine.begin() as conn:
         for stmt in statements:
             await conn.execute(text(stmt))
-
-        # Migrate existing families to parents (one-time)
         await conn.execute(text("""
             INSERT INTO parents (
                 family_id, email, password_hash, name, role, is_primary,
@@ -333,15 +235,11 @@ async def run_light_migrations() -> None:
                 SELECT 1 FROM parents p WHERE p.family_id = f.id AND p.is_primary = TRUE
             )
         """))
-
-        # Generate referral codes for families missing them
         await conn.execute(text("""
             UPDATE families
             SET referral_code = UPPER(SUBSTRING(MD5(RANDOM()::TEXT || id::TEXT) FROM 1 FOR 8))
             WHERE referral_code IS NULL
         """))
-
-        # One-time-style backfill for pre-existing tenants (skip new basic registrations)
         await conn.execute(text("""
             UPDATE families f
             SET rewards_enabled = TRUE,
@@ -361,7 +259,6 @@ async def run_light_migrations() -> None:
                 )
               )
         """))
-
         await conn.execute(text("""
             UPDATE families SET activated_at = created_at
             WHERE activated_at IS NULL
@@ -374,5 +271,4 @@ async def run_light_migrations() -> None:
                 OR EXISTS (SELECT 1 FROM children c WHERE c.family_id = families.id)
               )
         """))
-
         await _seed_default_plans(conn)
