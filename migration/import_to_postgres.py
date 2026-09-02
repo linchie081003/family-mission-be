@@ -131,25 +131,12 @@ def log_sort_key(item: dict) -> tuple[int, str]:
 
 
 def save_avatar_from_data_url(photo: str | None, child_id: int) -> str | None:
+    del child_id  # kept for call-site compatibility
     if not photo or not photo.startswith("data:"):
         return None
-    match = re.match(r"data:image/(\w+);base64,(.+)", photo, re.DOTALL)
-    if not match:
-        return None
-    ext = match.group(1).lower()
-    if ext == "jpeg":
-        ext = "jpg"
-    try:
-        raw = base64.b64decode(match.group(2))
-    except (ValueError, binascii.Error):
-        return None
-    upload_dir = settings.upload_dir
-    os.makedirs(upload_dir, exist_ok=True)
-    filename = f"migrate_{child_id}_{uuid.uuid4().hex}.{ext}"
-    filepath = os.path.join(upload_dir, filename)
-    with open(filepath, "wb") as f:
-        f.write(raw)
-    return f"/uploads/{filename}"
+    from app.services.avatar_image import normalize_avatar_data_url
+
+    return normalize_avatar_data_url(photo)
 
 
 def apply_transaction(

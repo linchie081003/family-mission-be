@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.auth import get_current_family
-from app.core.upload_url import get_upload_url
+from app.core.upload_url import get_upload_url, resolve_avatar_url
 from app.database import get_db
 from app.models.models import (
     BadgeDefinition,
@@ -71,7 +71,7 @@ async def get_dashboard(
             id=child.id,
             name=child.name,
             color=child.color,
-            avatar_url=get_upload_url(child.avatar_url),
+            avatar_url=resolve_avatar_url(child.avatar_url),
             lifetime_points=child.lifetime_points,
             active_balance=spendable,
             weekly_points=net,
@@ -122,7 +122,7 @@ async def get_pending(
             type="mission",
             child_name=c.child.name,
             child_color=c.child.color,
-            child_avatar_url=get_upload_url(c.child.avatar_url),
+            child_avatar_url=resolve_avatar_url(c.child.avatar_url),
             title=c.mission.title,
             points=c.points_awarded,
             created_at=c.completed_at,
@@ -148,7 +148,7 @@ async def get_pending(
             type=r.redemption_type.value,
             child_name=r.child.name,
             child_color=r.child.color,
-            child_avatar_url=get_upload_url(r.child.avatar_url),
+            child_avatar_url=resolve_avatar_url(r.child.avatar_url),
             title=title,
             points=r.points,
             created_at=r.created_at,
@@ -227,7 +227,7 @@ async def children_reports(
             id=child.id,
             name=child.name,
             color=child.color,
-            avatar_url=get_upload_url(child.avatar_url),
+            avatar_url=resolve_avatar_url(child.avatar_url),
             weekly_points=net,
             lifetime_points=child.lifetime_points,
             spendable_balance=spendable,

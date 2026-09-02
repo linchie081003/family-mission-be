@@ -1,4 +1,4 @@
-from app.core.upload_url import get_upload_url
+from app.core.upload_url import get_upload_url, resolve_avatar_url
 
 
 def test_get_upload_url_none():
@@ -28,3 +28,20 @@ def test_get_upload_url_other_path_unchanged(monkeypatch):
         "https://family-mission-be.onrender.com",
     )
     assert get_upload_url("/other/path.jpg") == "/other/path.jpg"
+
+
+def test_resolve_avatar_url_data_url():
+    assert resolve_avatar_url("data:image/jpeg;base64,abc") == "data:image/jpeg;base64,abc"
+
+
+def test_resolve_avatar_url_missing_upload(monkeypatch, tmp_path):
+    monkeypatch.setattr("app.core.upload_url.settings.upload_dir", str(tmp_path))
+    assert resolve_avatar_url("/uploads/missing.jpg") is None
+
+
+def test_resolve_avatar_url_legacy_upload_always_null():
+    assert resolve_avatar_url("/uploads/exists.jpg") is None
+    assert (
+        resolve_avatar_url("https://family-mission-be.onrender.com/uploads/exists.jpg")
+        is None
+    )

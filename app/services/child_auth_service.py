@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import create_access_token, verify_pin
 from app.core.constants import PIN_INVALID
 from app.core.security import sanitize_family_code
-from app.core.upload_url import get_upload_url
+from app.core.upload_url import resolve_avatar_url
 from app.models.models import Child, Family
 from app.repositories.child_repository import ChildRepository
 from app.repositories.family_repository import FamilyRepository
@@ -36,7 +36,7 @@ class ChildAuthService:
                 id=c.id,
                 name=c.name,
                 color=c.color,
-                avatar_url=get_upload_url(c.avatar_url),
+                avatar_url=resolve_avatar_url(c.avatar_url),
                 has_pin=c.pin_hash is not None,
             )
             for c in children

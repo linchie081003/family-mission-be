@@ -9,7 +9,7 @@ from app.services.avatar_image import avatar_content_to_data_url
 
 from app.core.auth import get_current_child
 from app.core.config import settings
-from app.core.upload_url import get_upload_url
+from app.core.upload_url import resolve_avatar_url
 from app.core.database import get_db
 from app.core.security import validate_upload
 from app.models.models import (
@@ -327,7 +327,7 @@ async def upload_avatar(
     validate_upload(file.filename or "avatar.jpg", file.content_type, len(content))
     child.avatar_url = avatar_content_to_data_url(content, file.content_type)
     await db.commit()
-    return {"avatar_url": get_upload_url(child.avatar_url)}
+    return {"avatar_url": resolve_avatar_url(child.avatar_url)}
 
 
 @router.get("/calendar", response_model=CalendarResponse)
